@@ -1,0 +1,75 @@
+/** All game tuning values and configuration constants */
+export const CONFIG = {
+  /** Debug mode — enables console logging and debug overlays */
+  DEBUG: false,
+
+  /** World dimensions */
+  WORLD_WIDTH: 4000,
+  WORLD_HEIGHT: 4000,
+
+  /** Physics */
+  DEFAULT_FRICTION: 0.92,
+  MAX_ENTITY_SPEED: 600,
+  BOUNDARY_PADDING: 50,
+
+  /** Camera */
+  CAMERA_LERP_SPEED: 0.08,
+  CAMERA_ZOOM_LERP: 0.05,
+  CAMERA_MIN_ZOOM: 0.3,
+  CAMERA_MAX_ZOOM: 2.0,
+  CAMERA_BASE_ZOOM: 1.0,
+
+  /** Spatial grid */
+  SPATIAL_GRID_CELL_SIZE: 150,
+
+  /** Consumption */
+  CONSUME_SIZE_RATIO: 0.7,
+  CONSUME_MASS_TRANSFER: 0.8,
+  CONSUME_ANIMATION_DURATION: 0.3,
+
+  /** Energy system */
+  ENERGY_MAX: 100,
+  ENERGY_DRAIN_BASE: 2.5,
+  ENERGY_DRAIN_PER_TIER: 0.5,
+  ENERGY_STARVATION_MASS_LOSS: 5,
+  ENERGY_CRITICAL_THRESHOLD: 20,
+
+  /** Evolution */
+  EVOLUTION_ANIMATION_DURATION: 2.5,
+  EVOLUTION_SLOWMO_FACTOR: 0.2,
+
+  /** AI */
+  AI_WANDER_CHANGE_INTERVAL: 2.0,
+  AI_FLEE_DISTANCE: 250,
+  AI_CHASE_DISTANCE: 350,
+  AI_PERCEPTION_RADIUS: 300,
+
+  /** Particles */
+  PARTICLE_POOL_SIZE: 500,
+  TRAIL_PARTICLE_INTERVAL: 0.03,
+  BURST_PARTICLE_COUNT: 12,
+
+  /** Spawning */
+  MAX_ENTITIES_PER_TIER: 200,
+  SPAWN_MARGIN: 400,
+  DESPAWN_DISTANCE: 2500,
+  RESPAWN_CHECK_INTERVAL: 1.0,
+
+  /** Screen effects */
+  SHAKE_DECAY: 0.9,
+  SHAKE_INTENSITY_EAT: 3,
+  SHAKE_INTENSITY_EVOLVE: 10,
+
+  /** HUD */
+  HUD_PADDING: 16,
+  HUD_BAR_WIDTH: 200,
+  HUD_BAR_HEIGHT: 14,
+  MINIMAP_SIZE: 140,
+  MINIMAP_PADDING: 12,
+
+  /** Player */
+  PLAYER_INITIAL_MASS: 10,
+  PLAYER_MASS_TO_RADIUS_FACTOR: 0.5,
+  PLAYER_MIN_RADIUS: 8,
+  PLAYER_MAX_RADIUS: 60,
+} as const;
