@@ -35,17 +35,21 @@ class ChargeAttractionMechanic implements TierMechanic {
   update(dt: number, world: World): void {
     const players = world.query('PlayerControlled', 'Transform', 'Physics');
     if (players.length === 0) return;
-    const playerTransform = players[0].getComponent<Transform>('Transform')!;
-    const playerPhysics = players[0].getComponent<Physics>('Physics')!;
 
     const hazards = world.query('Hazard', 'Transform');
-    for (const h of hazards) {
-      const t = h.getComponent<Transform>('Transform')!;
-      const diff = t.position.sub(playerTransform.position);
-      const dist = diff.mag();
-      if (dist < 350 && dist > 35) {
-        const force = (20000 / (dist * dist + 1)) * dt;
-        playerPhysics.acceleration = playerPhysics.acceleration.add(diff.normalize().mul(force * 60));
+    // Apply gravity pull to ALL players
+    for (let p = 0; p < players.length; p++) {
+      const playerTransform = players[p].getComponent<Transform>('Transform')!;
+      const playerPhysics = players[p].getComponent<Physics>('Physics')!;
+
+      for (const h of hazards) {
+        const t = h.getComponent<Transform>('Transform')!;
+        const diff = t.position.sub(playerTransform.position);
+        const dist = diff.mag();
+        if (dist < 350 && dist > 35) {
+          const force = (20000 / (dist * dist + 1)) * dt;
+          playerPhysics.acceleration = playerPhysics.acceleration.add(diff.normalize().mul(force * 60));
+        }
       }
     }
   }
@@ -80,14 +84,15 @@ class ElectronShieldMechanic implements TierMechanic {
   deactivate(): void {}
 
   update(dt: number, world: World): void {
-    const players = world.query('PlayerControlled');
-    if (players.length === 0) return;
-    const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
-    if (ctrl.maxShieldHP === 0) return;
-
     this.regenTimer += dt;
-    if (this.regenTimer >= 3) {
-      this.regenTimer = 0;
+    if (this.regenTimer < 3) return;
+    this.regenTimer = 0;
+
+    // Regen shield for ALL players
+    const players = world.query('PlayerControlled');
+    for (let i = 0; i < players.length; i++) {
+      const ctrl = players[i].getComponent<PlayerControlled>('PlayerControlled')!;
+      if (ctrl.maxShieldHP === 0) continue;
       ctrl.shieldHP = Math.min(ctrl.shieldHP + 1, ctrl.maxShieldHP);
     }
   }
@@ -328,10 +333,10 @@ export class AtomicTier implements TierDefinition {
   mechanics: TierMechanic[] = [new ElectronShieldMechanic()];
 
   onEnter(world: World, _eventBus: EventBus): void {
-    // Award electron shield
+    // Award electron shield to ALL players
     const players = world.query('PlayerControlled');
-    if (players.length > 0) {
-      const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+    for (let i = 0; i < players.length; i++) {
+      const ctrl = players[i].getComponent<PlayerControlled>('PlayerControlled')!;
       ctrl.maxShieldHP = 5;
       ctrl.shieldHP = 5;
     }

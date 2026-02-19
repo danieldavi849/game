@@ -72,7 +72,18 @@ export const GameEvents = {
   GAME_RESTART: 'game:restart',
   SCREEN_SHAKE: 'screen:shake',
   SLOW_MO: 'effect:slowmo',
+  UPGRADE_CHOSEN: 'upgrade:chosen',
 } as const;
+
+/** Upgrade that can be purchased with CP between tiers */
+export interface UpgradeDef {
+  id: string;
+  name: string;
+  description: string;
+  cost: number;
+  color: string;
+  apply: (ctrl: { speed: number; energy: number; maxShieldHP: number; shieldHP: number }) => void;
+}
 
 /** Background configuration for a tier */
 export interface BackgroundConfig {

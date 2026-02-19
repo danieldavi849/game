@@ -34,27 +34,35 @@ export class ConsumptionSystem implements System {
   update(world: World, dt: number): void {
     if (this.pendingConsumptions.length === 0) return;
 
-    const players = world.query('PlayerControlled');
-    if (players.length === 0) {
-      this.pendingConsumptions.length = 0;
-      return;
-    }
-
-    const player = players[0];
-    const playerCtrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
-    const renderable = player.getComponent<Renderable>('Renderable');
-    const collider = player.getComponent<Collider>('Collider');
-    const physics = player.getComponent<Physics>('Physics');
-
     for (const event of this.pendingConsumptions) {
       const consumed = world.getEntity(event.consumedId);
       if (!consumed || !consumed.active) continue;
 
+      // Find the consuming player by entity ID (multiplayer-ready)
+      const player = world.getEntity(event.consumerId);
+      if (!player || !player.active) continue;
+
+      const playerCtrl = player.getComponent<PlayerControlled>('PlayerControlled');
+      if (!playerCtrl) continue;
+
+      const renderable = player.getComponent<Renderable>('Renderable');
+      const collider = player.getComponent<Collider>('Collider');
+      const physics = player.getComponent<Physics>('Physics');
+
+      // PvP: if the consumed entity is another player, emit their death
+      const consumedCtrl = consumed.getComponent<PlayerControlled>('PlayerControlled');
+      if (consumedCtrl) {
+        this.eventBus.emit(GameEvents.PLAYER_DIED, { playerId: event.consumedId, killedBy: event.consumerId });
+      }
+
       // Remove consumed entity
       world.removeEntity(event.consumedId);
 
-      // Add mass
-      const massGain = event.massValue * CONFIG.CONSUME_MASS_TRANSFER;
+      // PvP bonus: absorb a portion of the consumed player's mass
+      const bonusMass = consumedCtrl ? consumedCtrl.evolutionMass * 0.5 : 0;
+
+      // Add mass (includes PvP bonus from eaten player's accumulated mass)
+      const massGain = event.massValue * CONFIG.CONSUME_MASS_TRANSFER + bonusMass;
       playerCtrl.evolutionMass += massGain;
 
       // Add energy
@@ -67,7 +75,7 @@ export class ConsumptionSystem implements System {
       // Add CP
       if (event.cpValue > 0) {
         playerCtrl.cp += event.cpValue;
-        this.eventBus.emit(GameEvents.CP_GAINED, { amount: event.cpValue, total: playerCtrl.cp });
+        this.eventBus.emit(GameEvents.CP_GAINED, { playerId: player.id, amount: event.cpValue, total: playerCtrl.cp });
       }
 
       // Grow player size
@@ -84,10 +92,11 @@ export class ConsumptionSystem implements System {
 
       // Emit events
       this.eventBus.emit(GameEvents.MASS_CHANGED, {
+        playerId: player.id,
         mass: playerCtrl.evolutionMass,
         totalMass: physics?.mass ?? 0,
       });
-      this.eventBus.emit(GameEvents.ENERGY_CHANGED, { energy: playerCtrl.energy });
+      this.eventBus.emit(GameEvents.ENERGY_CHANGED, { playerId: player.id, energy: playerCtrl.energy });
 
       // Screen shake on eat
       this.eventBus.emit(GameEvents.SCREEN_SHAKE, { intensity: CONFIG.SHAKE_INTENSITY_EAT });

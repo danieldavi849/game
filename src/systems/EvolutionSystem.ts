@@ -31,24 +31,30 @@ export class EvolutionSystem implements System {
     if (this.evolving) return;
 
     const players = world.query('PlayerControlled');
-    if (players.length === 0) return;
+    for (let i = 0; i < players.length; i++) {
+      const ctrl = players[i].getComponent<PlayerControlled>('PlayerControlled')!;
 
-    const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
-
-    if (ctrl.evolutionMass >= this.threshold) {
-      this.evolving = true;
-      this.eventBus.emit(GameEvents.EVOLUTION_READY, {
-        mass: ctrl.evolutionMass,
-        threshold: this.threshold,
-      });
+      if (ctrl.evolutionMass >= this.threshold) {
+        this.evolving = true;
+        this.eventBus.emit(GameEvents.EVOLUTION_READY, {
+          playerId: players[i].id,
+          mass: ctrl.evolutionMass,
+          threshold: this.threshold,
+        });
+        break;
+      }
     }
   }
 
-  /** Get progress toward evolution (0-1) */
-  getProgress(world: World): number {
+  /** Get progress toward evolution for a specific player (0-1). Falls back to first player. */
+  getProgress(world: World, playerId?: number): number {
     const players = world.query('PlayerControlled');
     if (players.length === 0) return 0;
-    const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+
+    const target = playerId !== undefined
+      ? players.find(p => p.id === playerId) ?? players[0]
+      : players[0];
+    const ctrl = target.getComponent<PlayerControlled>('PlayerControlled')!;
     return Math.min(ctrl.evolutionMass / this.threshold, 1);
   }
 }

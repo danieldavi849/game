@@ -14,15 +14,21 @@ export class AISystem implements System {
   readonly priority = 5;
   private playerPos: Vec2 = new Vec2(0, 0);
   private playerRadius: number = 10;
+  private playerPositions: Array<{ pos: Vec2; radius: number }> = [];
 
   update(world: World, dt: number): void {
-    // Cache player position
+    // Cache all player positions (multiplayer-ready)
     const players = world.query('PlayerControlled', 'Transform', 'Renderable');
-    if (players.length > 0) {
-      const pt = players[0].getComponent<Transform>('Transform')!;
-      const pr = players[0].getComponent<Renderable>('Renderable')!;
-      this.playerPos.copyFrom(pt.position);
-      this.playerRadius = pr.radius;
+    this.playerPositions.length = 0;
+    for (let p = 0; p < players.length; p++) {
+      const pt = players[p].getComponent<Transform>('Transform')!;
+      const pr = players[p].getComponent<Renderable>('Renderable')!;
+      this.playerPositions.push({ pos: pt.position, radius: pr.radius });
+    }
+    // Default to first player for backward compat
+    if (this.playerPositions.length > 0) {
+      this.playerPos.copyFrom(this.playerPositions[0].pos);
+      this.playerRadius = this.playerPositions[0].radius;
     }
 
     const entities = world.query('AIBehavior', 'Transform', 'Physics');
@@ -32,6 +38,9 @@ export class AISystem implements System {
       const ai = entity.getComponent<AIBehavior>('AIBehavior')!;
       const transform = entity.getComponent<Transform>('Transform')!;
       const physics = entity.getComponent<Physics>('Physics')!;
+
+      // Target nearest player for this AI entity
+      this.selectNearestPlayer(transform.position);
 
       switch (ai.behavior) {
         case BehaviorType.Wander:
@@ -57,6 +66,19 @@ export class AISystem implements System {
       // Face direction of movement
       if (physics.velocity.magSq() > 1) {
         transform.rotation = physics.velocity.angle();
+      }
+    }
+  }
+
+  private selectNearestPlayer(entityPos: Vec2): void {
+    if (this.playerPositions.length <= 1) return;
+    let bestDist = Infinity;
+    for (let i = 0; i < this.playerPositions.length; i++) {
+      const d = entityPos.distSq(this.playerPositions[i].pos);
+      if (d < bestDist) {
+        bestDist = d;
+        this.playerPos.copyFrom(this.playerPositions[i].pos);
+        this.playerRadius = this.playerPositions[i].radius;
       }
     }
   }

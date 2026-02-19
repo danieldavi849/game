@@ -12,6 +12,7 @@ import { Consumable } from '../components/Consumable.ts';
 import { Vec2 } from '../utils/Vec2.ts';
 import { GameEvents } from '../types/index.ts';
 import { CONFIG } from '../utils/Constants.ts';
+import { randomRange } from '../utils/MathUtils.ts';
 
 /** Manages tier state, transitions, and world regeneration */
 export class TierManager {
@@ -26,7 +27,31 @@ export class TierManager {
   constructor(
     private world: World,
     private eventBus: EventBus,
-  ) {}
+  ) {
+    // Apply procedural variation to each run
+    this.applyRunVariation();
+  }
+
+  /** Randomize entity counts, hazard density, and thresholds for this run */
+  private applyRunVariation(): void {
+    for (const tier of this.tiers) {
+      // Vary evolution threshold by +/-15%
+      const thresholdMult = randomRange(0.85, 1.15);
+      tier.evolutionThreshold = Math.round(tier.evolutionThreshold * thresholdMult);
+
+      // Vary entity counts by +/-25%
+      for (const spawn of tier.entitySpawns) {
+        const countMult = randomRange(0.75, 1.25);
+        spawn.count = Math.max(5, Math.round(spawn.count * countMult));
+      }
+
+      // Vary hazard counts by +/-30%
+      for (const hazard of tier.hazardSpawns) {
+        const hazMult = randomRange(0.7, 1.3);
+        hazard.count = Math.max(2, Math.round(hazard.count * hazMult));
+      }
+    }
+  }
 
   /** Get the current tier definition */
   getCurrentTier(): TierDefinition {
@@ -101,38 +126,42 @@ export class TierManager {
     const players = this.world.query('PlayerControlled');
     if (players.length === 0) return;
 
-    const player = players[0];
-    const ctrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
-    const renderable = player.getComponent<Renderable>('Renderable');
-    const collider = player.getComponent<Collider>('Collider');
-    const physics = player.getComponent<Physics>('Physics');
-    const transform = player.getComponent<Transform>('Transform');
+    // Setup ALL players for the new tier (multiplayer-ready)
+    for (let i = 0; i < players.length; i++) {
+      const player = players[i];
+      const ctrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
+      const renderable = player.getComponent<Renderable>('Renderable');
+      const collider = player.getComponent<Collider>('Collider');
+      const physics = player.getComponent<Physics>('Physics');
+      const transform = player.getComponent<Transform>('Transform');
 
-    // Reposition player to center
-    if (transform) {
-      transform.position = new Vec2(CONFIG.WORLD_WIDTH / 2, CONFIG.WORLD_HEIGHT / 2);
-    }
+      // Reposition player to center (spread slightly in multiplayer)
+      if (transform) {
+        const offset = players.length > 1 ? i * 80 - (players.length - 1) * 40 : 0;
+        transform.position = new Vec2(CONFIG.WORLD_WIDTH / 2 + offset, CONFIG.WORLD_HEIGHT / 2);
+      }
 
-    // Reset evolution mass, keep accumulated CP and energy
-    ctrl.evolutionMass = 0;
-    ctrl.energy = CONFIG.ENERGY_MAX;
-    ctrl.speed = tier.playerConfig.speed;
-    ctrl.shieldHP = 0;
-    ctrl.maxShieldHP = 0;
+      // Reset evolution mass, keep accumulated CP and energy
+      ctrl.evolutionMass = 0;
+      ctrl.energy = CONFIG.ENERGY_MAX;
+      ctrl.speed = tier.playerConfig.speed;
+      ctrl.shieldHP = 0;
+      ctrl.maxShieldHP = 0;
 
-    if (renderable) {
-      renderable.color = tier.playerConfig.color;
-      renderable.glowColor = tier.playerConfig.glowColor;
-      renderable.glowRadius = tier.playerConfig.glowRadius;
-      renderable.radius = tier.playerConfig.baseRadius;
-    }
-    if (collider) {
-      collider.radius = tier.playerConfig.baseRadius;
-    }
-    if (physics) {
-      physics.mass = CONFIG.PLAYER_INITIAL_MASS;
-      physics.maxSpeed = tier.playerConfig.speed;
-      physics.velocity = new Vec2(0, 0);
+      if (renderable) {
+        renderable.color = tier.playerConfig.color;
+        renderable.glowColor = tier.playerConfig.glowColor;
+        renderable.glowRadius = tier.playerConfig.glowRadius;
+        renderable.radius = tier.playerConfig.baseRadius;
+      }
+      if (collider) {
+        collider.radius = tier.playerConfig.baseRadius;
+      }
+      if (physics) {
+        physics.mass = CONFIG.PLAYER_INITIAL_MASS;
+        physics.maxSpeed = tier.playerConfig.speed;
+        physics.velocity = new Vec2(0, 0);
+      }
     }
   }
 
@@ -172,16 +201,20 @@ export class TierManager {
   }
 
   private checkRespawns(tier: TierDefinition): void {
-    // Count current food entities
-    const foodEntities = this.world.query('Consumable');
+    // Count current food entities (exclude players with Consumable — PvP component)
+    const consumables = this.world.query('Consumable');
+    const foodEntities = consumables.filter(e => !e.hasComponent('PlayerControlled'));
     const currentCount = foodEntities.length;
     const targetCount = tier.entitySpawns.reduce((sum, cfg) => sum + cfg.count, 0);
 
     if (currentCount < targetCount * 0.6) {
-      // Respawn missing food near player
+      // Respawn missing food near a random player
       const players = this.world.query('PlayerControlled', 'Transform');
-      const playerPos = players.length > 0
-        ? players[0].getComponent<Transform>('Transform')!.position
+      const randomPlayer = players.length > 0
+        ? players[Math.floor(Math.random() * players.length)]
+        : null;
+      const playerPos = randomPlayer
+        ? randomPlayer.getComponent<Transform>('Transform')!.position
         : new Vec2(CONFIG.WORLD_WIDTH / 2, CONFIG.WORLD_HEIGHT / 2);
 
       const needed = Math.ceil((targetCount - currentCount) * 0.3);

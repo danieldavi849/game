@@ -34,74 +34,76 @@ export class CollisionSystem implements System {
       this.grid.insert(e.id, t.position.x, t.position.y, c.radius);
     }
 
-    // Check player collisions specifically
+    // Check collisions for ALL players (multiplayer-ready)
     const players = world.query('PlayerControlled', 'Transform', 'Collider');
     if (players.length === 0) return;
 
-    const player = players[0];
-    const playerTransform = player.getComponent<Transform>('Transform')!;
-    const playerCollider = player.getComponent<Collider>('Collider')!;
-    const playerPhysics = player.getComponent<Physics>('Physics');
-    const playerRenderable = player.getComponent<Renderable>('Renderable');
-    const playerCtrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
+    for (let p = 0; p < players.length; p++) {
+      const player = players[p];
+      const playerTransform = player.getComponent<Transform>('Transform')!;
+      const playerCollider = player.getComponent<Collider>('Collider')!;
+      const playerPhysics = player.getComponent<Physics>('Physics');
+      const playerRenderable = player.getComponent<Renderable>('Renderable');
 
-    const nearby = this.grid.query(
-      playerTransform.position.x,
-      playerTransform.position.y,
-      playerCollider.radius + 100,
-    );
+      const nearby = this.grid.query(
+        playerTransform.position.x,
+        playerTransform.position.y,
+        playerCollider.radius + 100,
+      );
 
-    for (let i = 0; i < nearby.length; i++) {
-      const otherId = nearby[i];
-      if (otherId === player.id) continue;
+      for (let i = 0; i < nearby.length; i++) {
+        const otherId = nearby[i];
+        if (otherId === player.id) continue;
 
-      const other = world.getEntity(otherId);
-      if (!other || !other.active) continue;
+        const other = world.getEntity(otherId);
+        if (!other || !other.active) continue;
 
-      const otherTransform = other.getComponent<Transform>('Transform')!;
-      const otherCollider = other.getComponent<Collider>('Collider');
-      if (!otherCollider) continue;
+        const otherTransform = other.getComponent<Transform>('Transform')!;
+        const otherCollider = other.getComponent<Collider>('Collider');
+        if (!otherCollider) continue;
 
-      // Circle-circle test
-      const dist = playerTransform.position.dist(otherTransform.position);
-      const minDist = playerCollider.radius + otherCollider.radius;
+        // Circle-circle test
+        const dist = playerTransform.position.dist(otherTransform.position);
+        const minDist = playerCollider.radius + otherCollider.radius;
 
-      if (dist < minDist) {
-        // Consumable collision
-        const consumable = other.getComponent<Consumable>('Consumable');
-        if (consumable) {
-          const playerRadius = playerRenderable ? playerRenderable.radius : playerCollider.radius;
-          const otherRenderable = other.getComponent<Renderable>('Renderable');
-          const otherRadius = otherRenderable ? otherRenderable.radius : otherCollider.radius;
+        if (dist < minDist) {
+          // Consumable collision (food OR other players with Consumable)
+          const consumable = other.getComponent<Consumable>('Consumable');
+          if (consumable) {
+            const playerRadius = playerRenderable ? playerRenderable.radius : playerCollider.radius;
+            const otherRenderable = other.getComponent<Renderable>('Renderable');
+            const otherRadius = otherRenderable ? otherRenderable.radius : otherCollider.radius;
 
-          // Can only eat entities smaller than us (or within ratio)
-          if (otherRadius <= playerRadius * (1 / CONFIG.CONSUME_SIZE_RATIO)) {
-            this.eventBus.emit(GameEvents.ENTITY_CONSUMED, {
-              consumerId: player.id,
-              consumedId: other.id,
-              massValue: consumable.massValue,
-              energyValue: consumable.energyValue,
-              cpValue: consumable.cpValue,
-              entityType: consumable.entityType,
-              position: otherTransform.position.clone(),
-              respawns: consumable.respawns,
-            });
+            // Can only eat entities smaller than us (within size ratio)
+            if (otherRadius <= playerRadius * (1 / CONFIG.CONSUME_SIZE_RATIO)) {
+              this.eventBus.emit(GameEvents.ENTITY_CONSUMED, {
+                consumerId: player.id,
+                consumedId: other.id,
+                massValue: consumable.massValue,
+                energyValue: consumable.energyValue,
+                cpValue: consumable.cpValue,
+                entityType: consumable.entityType,
+                position: otherTransform.position.clone(),
+                respawns: consumable.respawns,
+              });
+            }
           }
-        }
 
-        // Hazard collision
-        const hazard = other.getComponent<Hazard>('Hazard');
-        if (hazard) {
-          this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
-            damage: hazard.damage,
-            knockbackForce: hazard.knockbackForce,
-            position: otherTransform.position.clone(),
-          });
+          // Hazard collision
+          const hazard = other.getComponent<Hazard>('Hazard');
+          if (hazard) {
+            this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+              playerId: player.id,
+              damage: hazard.damage,
+              knockbackForce: hazard.knockbackForce,
+              position: otherTransform.position.clone(),
+            });
 
-          // Knockback
-          if (playerPhysics) {
-            const pushDir = playerTransform.position.sub(otherTransform.position).normalize();
-            playerPhysics.velocity = pushDir.mul(hazard.knockbackForce);
+            // Knockback
+            if (playerPhysics) {
+              const pushDir = playerTransform.position.sub(otherTransform.position).normalize();
+              playerPhysics.velocity = pushDir.mul(hazard.knockbackForce);
+            }
           }
         }
       }

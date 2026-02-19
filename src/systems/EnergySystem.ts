@@ -25,41 +25,44 @@ export class EnergySystem implements System {
     const players = world.query('PlayerControlled');
     if (players.length === 0) return;
 
-    const player = players[0];
-    const ctrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
-    const physics = player.getComponent<Physics>('Physics');
-
-    // Passive drain
     const drainRate = CONFIG.ENERGY_DRAIN_BASE + this.tierIndex * CONFIG.ENERGY_DRAIN_PER_TIER;
-    ctrl.energy -= drainRate * dt;
-    ctrl.energy = clamp(ctrl.energy, 0, CONFIG.ENERGY_MAX);
 
-    this.eventBus.emit(GameEvents.ENERGY_CHANGED, { energy: ctrl.energy });
+    for (let i = 0; i < players.length; i++) {
+      const player = players[i];
+      const ctrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
+      const physics = player.getComponent<Physics>('Physics');
 
-    // Starvation: lose mass when energy is 0
-    if (ctrl.energy <= 0) {
-      ctrl.evolutionMass -= CONFIG.ENERGY_STARVATION_MASS_LOSS * dt;
-      if (physics) {
-        physics.mass -= CONFIG.ENERGY_STARVATION_MASS_LOSS * dt;
-        if (physics.mass < 1) physics.mass = 1;
+      // Passive drain
+      ctrl.energy -= drainRate * dt;
+      ctrl.energy = clamp(ctrl.energy, 0, CONFIG.ENERGY_MAX);
 
-        // Shrink player
-        const renderable = player.getComponent<Renderable>('Renderable');
-        const collider = player.getComponent<Collider>('Collider');
-        if (renderable && collider) {
-          const targetRadius = clamp(
-            CONFIG.PLAYER_MIN_RADIUS + physics.mass * CONFIG.PLAYER_MASS_TO_RADIUS_FACTOR,
-            CONFIG.PLAYER_MIN_RADIUS,
-            CONFIG.PLAYER_MAX_RADIUS,
-          );
-          renderable.radius = targetRadius;
-          collider.radius = targetRadius;
+      this.eventBus.emit(GameEvents.ENERGY_CHANGED, { playerId: player.id, energy: ctrl.energy });
+
+      // Starvation: lose mass when energy is 0
+      if (ctrl.energy <= 0) {
+        ctrl.evolutionMass -= CONFIG.ENERGY_STARVATION_MASS_LOSS * dt;
+        if (physics) {
+          physics.mass -= CONFIG.ENERGY_STARVATION_MASS_LOSS * dt;
+          if (physics.mass < 1) physics.mass = 1;
+
+          // Shrink player
+          const renderable = player.getComponent<Renderable>('Renderable');
+          const collider = player.getComponent<Collider>('Collider');
+          if (renderable && collider) {
+            const targetRadius = clamp(
+              CONFIG.PLAYER_MIN_RADIUS + physics.mass * CONFIG.PLAYER_MASS_TO_RADIUS_FACTOR,
+              CONFIG.PLAYER_MIN_RADIUS,
+              CONFIG.PLAYER_MAX_RADIUS,
+            );
+            renderable.radius = targetRadius;
+            collider.radius = targetRadius;
+          }
         }
-      }
 
-      // Die if mass drops too low
-      if (ctrl.evolutionMass <= 0) {
-        this.eventBus.emit(GameEvents.PLAYER_DIED, {});
+        // Die if mass drops too low
+        if (ctrl.evolutionMass <= 0) {
+          this.eventBus.emit(GameEvents.PLAYER_DIED, { playerId: player.id });
+        }
       }
     }
   }

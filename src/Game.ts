@@ -20,13 +20,15 @@ import { HUD } from './ui/HUD.ts';
 import { DeathScreen } from './ui/DeathScreen.ts';
 import { EvolutionScreen } from './ui/EvolutionScreen.ts';
 import { WinScreen } from './ui/WinScreen.ts';
+import { UpgradeScreen } from './ui/UpgradeScreen.ts';
 import { Transform } from './components/Transform.ts';
 import { Physics } from './components/Physics.ts';
 import { Renderable } from './components/Renderable.ts';
 import { Collider } from './components/Collider.ts';
 import { PlayerControlled } from './components/PlayerControlled.ts';
+import { Consumable } from './components/Consumable.ts';
 import { Vec2 } from './utils/Vec2.ts';
-import { GameEvents, GameState, CollisionLayer } from './types/index.ts';
+import { GameEvents, GameState, CollisionLayer, EntityType, UpgradeDef } from './types/index.ts';
 import { CONFIG } from './utils/Constants.ts';
 
 /** Top-level game class: owns loop, state, systems, and coordinates everything */
@@ -59,9 +61,11 @@ export class Game {
   private deathScreen: DeathScreen;
   private evolutionScreen: EvolutionScreen;
   private winScreen: WinScreen;
+  private upgradeScreen: UpgradeScreen;
 
   private gameState: GameState = GameState.Playing;
   private evolutionTimer = 0;
+  private pendingMassBonus = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new Renderer(canvas);
@@ -94,6 +98,7 @@ export class Game {
     this.deathScreen = new DeathScreen(this.eventBus);
     this.evolutionScreen = new EvolutionScreen();
     this.winScreen = new WinScreen(this.eventBus);
+    this.upgradeScreen = new UpgradeScreen();
 
     this.registerEvents();
     this.startGame();
@@ -107,6 +112,11 @@ export class Game {
     // Click handler for UI buttons
     canvas.addEventListener('click', (e) => {
       this.handleClick(e.clientX, e.clientY);
+    });
+
+    // Mousemove for upgrade screen hover
+    canvas.addEventListener('mousemove', (e) => {
+      this.upgradeScreen.handleMouseMove(e.clientX, e.clientY);
     });
   }
 
@@ -149,16 +159,52 @@ export class Game {
           nextName,
           nextColor,
           () => {
-            this.tierManager.advanceToNextTier();
-            const newTier = this.tierManager.getCurrentTier();
-            this.evolutionSystem.setThreshold(newTier.evolutionThreshold);
-            this.evolutionSystem.setEvolving(false);
-            this.energySystem.setTierIndex(this.tierManager.getTierIndex());
-            this.background.setConfig(newTier.background);
-            this.hud.setTier(newTier.displayName, newTier.displayColor);
-            this.updateHudThreshold();
-            this.loop.setTimeScale(1);
-            this.gameState = GameState.Playing;
+            // After evolution animation, show upgrade screen
+            this.loop.setTimeScale(0); // Pause the game
+
+            const players = this.world.query('PlayerControlled');
+            const playerCp = players.length > 0
+              ? players[0].getComponent<PlayerControlled>('PlayerControlled')!.cp
+              : 0;
+
+            this.upgradeScreen.show(playerCp, (chosen: UpgradeDef | null) => {
+              // Apply the upgrade
+              if (chosen && players.length > 0) {
+                const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+                ctrl.cp -= chosen.cost;
+
+                // Special case: mass primer gives bonus mass after tier reset
+                if (chosen.id === 'mass_head_start') {
+                  this.pendingMassBonus = 30;
+                } else {
+                  chosen.apply(ctrl);
+                }
+
+                this.eventBus.emit(GameEvents.UPGRADE_CHOSEN, { upgradeId: chosen.id });
+              }
+
+              // Now advance the tier
+              this.tierManager.advanceToNextTier();
+              const newTier = this.tierManager.getCurrentTier();
+              this.evolutionSystem.setThreshold(newTier.evolutionThreshold);
+              this.evolutionSystem.setEvolving(false);
+              this.energySystem.setTierIndex(this.tierManager.getTierIndex());
+              this.background.setConfig(newTier.background);
+              this.hud.setTier(newTier.displayName, newTier.displayColor);
+              this.updateHudThreshold();
+
+              // Apply pending mass bonus after tier reset
+              if (this.pendingMassBonus > 0 && players.length > 0) {
+                const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+                ctrl.evolutionMass += this.pendingMassBonus;
+                const physics = players[0].getComponent<Physics>('Physics');
+                if (physics) physics.mass += this.pendingMassBonus;
+                this.pendingMassBonus = 0;
+              }
+
+              this.loop.setTimeScale(1);
+              this.gameState = GameState.Playing;
+            });
           },
         );
       }, 600);
@@ -174,10 +220,20 @@ export class Game {
     });
 
     this.eventBus.on(GameEvents.PLAYER_DAMAGED, (data: unknown) => {
-      const { damage } = data as { damage: number; knockbackForce: number; position: Vec2 };
-      const players = this.world.query('PlayerControlled');
-      if (players.length === 0) return;
-      const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+      const { playerId, damage } = data as { playerId?: number; damage: number; knockbackForce: number; position: Vec2 };
+
+      // Find the damaged player by ID, or fall back to first player
+      let player;
+      if (playerId !== undefined) {
+        player = this.world.getEntity(playerId);
+      }
+      if (!player) {
+        const players = this.world.query('PlayerControlled');
+        if (players.length === 0) return;
+        player = players[0];
+      }
+      const ctrl = player.getComponent<PlayerControlled>('PlayerControlled');
+      if (!ctrl) return;
 
       // Shield absorbs damage
       if (ctrl.shieldHP > 0) {
@@ -187,7 +243,7 @@ export class Game {
 
       // Otherwise lose energy
       ctrl.energy = Math.max(0, ctrl.energy - damage);
-      this.eventBus.emit(GameEvents.ENERGY_CHANGED, { energy: ctrl.energy });
+      this.eventBus.emit(GameEvents.ENERGY_CHANGED, { playerId: player.id, energy: ctrl.energy });
       this.eventBus.emit(GameEvents.SCREEN_SHAKE, { intensity: CONFIG.SHAKE_INTENSITY_EAT * 2 });
     });
   }
@@ -239,6 +295,9 @@ export class Game {
     ctrl.energy = CONFIG.ENERGY_MAX;
     player.addComponent(ctrl);
 
+    // PvP: players are consumable by larger players (high mass value as reward)
+    player.addComponent(new Consumable(EntityType.Player, 20, 30, 5, false));
+
     // Camera starts on player
     this.camera.position.copyFrom(new Vec2(CONFIG.WORLD_WIDTH / 2, CONFIG.WORLD_HEIGHT / 2));
   }
@@ -254,6 +313,7 @@ export class Game {
     }
 
     this.evolutionScreen.update(dt);
+    this.upgradeScreen.update(dt);
 
     const isEvolving = this.gameState === GameState.Evolving;
 
@@ -302,6 +362,11 @@ export class Game {
       this.evolutionScreen.render(ctx, w, h);
     }
 
+    // Upgrade screen
+    if (this.upgradeScreen.isVisible()) {
+      this.upgradeScreen.render(ctx, w, h);
+    }
+
     // Death / win screens
     if (this.gameState === GameState.Dead) {
       this.deathScreen.render(ctx, w, h);
@@ -321,6 +386,7 @@ export class Game {
   private handleClick(x: number, y: number): void {
     const w = this.renderer.width;
     const h = this.renderer.height;
+    if (this.upgradeScreen.handleClick(x, y, w, h)) return;
     this.deathScreen.handleClick(x, y, w, h);
     this.winScreen.handleClick(x, y, w, h);
   }
@@ -332,7 +398,9 @@ export class Game {
     this.loop.setTimeScale(1);
     this.deathScreen.hide();
     this.winScreen.hide();
+    this.upgradeScreen.hide();
     this.evolutionSystem.setEvolving(false);
+    this.pendingMassBonus = 0;
 
     // Re-create tier manager with fresh world
     this.tierManager = new TierManager(this.world, this.eventBus);
