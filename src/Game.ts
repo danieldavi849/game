@@ -21,6 +21,8 @@ import { DeathScreen } from './ui/DeathScreen.ts';
 import { EvolutionScreen } from './ui/EvolutionScreen.ts';
 import { WinScreen } from './ui/WinScreen.ts';
 import { UpgradeScreen } from './ui/UpgradeScreen.ts';
+import { MenuScreen } from './ui/MenuScreen.ts';
+import { DebugOverlay } from './ui/DebugOverlay.ts';
 import { Transform } from './components/Transform.ts';
 import { Physics } from './components/Physics.ts';
 import { Renderable } from './components/Renderable.ts';
@@ -62,10 +64,13 @@ export class Game {
   private evolutionScreen: EvolutionScreen;
   private winScreen: WinScreen;
   private upgradeScreen: UpgradeScreen;
+  private menuScreen: MenuScreen;
+  private debugOverlay: DebugOverlay;
 
-  private gameState: GameState = GameState.Playing;
+  private gameState: GameState = GameState.Menu;
   private evolutionTimer = 0;
   private pendingMassBonus = 0;
+  private debugMode = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new Renderer(canvas);
@@ -99,9 +104,18 @@ export class Game {
     this.evolutionScreen = new EvolutionScreen();
     this.winScreen = new WinScreen(this.eventBus);
     this.upgradeScreen = new UpgradeScreen();
+    this.menuScreen = new MenuScreen();
+    this.debugOverlay = new DebugOverlay();
 
-    this.registerEvents();
-    this.startGame();
+    // Show menu first
+    this.gameState = GameState.Menu;
+    this.menuScreen.show();
+
+    // Start the render loop (menu needs it)
+    this.loop.start(
+      (dt) => this.update(dt),
+      () => this.render(),
+    );
 
     // Handle resize
     window.addEventListener('resize', () => {
@@ -114,9 +128,16 @@ export class Game {
       this.handleClick(e.clientX, e.clientY);
     });
 
-    // Mousemove for upgrade screen hover
+    // Mousemove for upgrade/menu screen hover
     canvas.addEventListener('mousemove', (e) => {
       this.upgradeScreen.handleMouseMove(e.clientX, e.clientY);
+      this.menuScreen.handleMouseMove(e.clientX, e.clientY);
+    });
+
+    // Debug mode keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (!this.debugMode) return;
+      this.handleDebugKey(e.key);
     });
   }
 
@@ -159,8 +180,12 @@ export class Game {
           nextName,
           nextColor,
           () => {
-            // After evolution animation, show upgrade screen
-            this.loop.setTimeScale(0); // Pause the game
+            // Force-hide evolution screen before showing upgrade
+            this.evolutionScreen.forceHide();
+
+            // Switch to Upgrading state — game systems frozen, UI updates run
+            this.gameState = GameState.Upgrading;
+            this.loop.setTimeScale(1);
 
             const players = this.world.query('PlayerControlled');
             const playerCp = players.length > 0
@@ -235,6 +260,9 @@ export class Game {
       const ctrl = player.getComponent<PlayerControlled>('PlayerControlled');
       if (!ctrl) return;
 
+      // God mode: ignore all damage
+      if (this.debugMode && this.debugOverlay.isGodMode()) return;
+
       // Shield absorbs damage
       if (ctrl.shieldHP > 0) {
         ctrl.shieldHP = Math.max(0, ctrl.shieldHP - 1);
@@ -261,11 +289,6 @@ export class Game {
 
     this.gameState = GameState.Playing;
     this.loop.setTimeScale(1);
-
-    this.loop.start(
-      (dt) => this.update(dt),
-      () => this.render(),
-    );
   }
 
   private spawnPlayer(): void {
@@ -303,6 +326,12 @@ export class Game {
   }
 
   private update(dt: number): void {
+    // Menu state — only update menu UI
+    if (this.gameState === GameState.Menu) {
+      this.menuScreen.update(dt);
+      return;
+    }
+
     if (this.gameState === GameState.Dead) {
       this.deathScreen.update(dt);
       return;
@@ -312,10 +341,23 @@ export class Game {
       return;
     }
 
+    // Upgrading state — only update upgrade UI, freeze game
+    if (this.gameState === GameState.Upgrading) {
+      this.upgradeScreen.update(dt);
+      return;
+    }
+
     this.evolutionScreen.update(dt);
-    this.upgradeScreen.update(dt);
 
     const isEvolving = this.gameState === GameState.Evolving;
+
+    // God mode: keep energy full
+    if (this.debugMode && this.debugOverlay.isGodMode()) {
+      const players = this.world.query('PlayerControlled');
+      if (players.length > 0) {
+        players[0].getComponent<PlayerControlled>('PlayerControlled')!.energy = CONFIG.ENERGY_MAX;
+      }
+    }
 
     // Always run these even during evolution (slowed down)
     this.inputSystem.update(this.world, dt);
@@ -342,6 +384,12 @@ export class Game {
     const w = this.renderer.width;
     const h = this.renderer.height;
 
+    // Menu screen
+    if (this.gameState === GameState.Menu) {
+      this.menuScreen.render(ctx, w, h);
+      return;
+    }
+
     // Background
     this.background.render(ctx, this.camera, w, h);
 
@@ -355,6 +403,11 @@ export class Game {
     if (this.gameState !== GameState.Dead && this.gameState !== GameState.Won) {
       this.hud.render(ctx, this.world, w, h);
       this.renderTips(ctx);
+    }
+
+    // Debug overlay
+    if (this.debugMode) {
+      this.debugOverlay.render(ctx, this.world, this.tierManager, w, h);
     }
 
     // Evolution overlay
@@ -380,15 +433,79 @@ export class Game {
     ctx.font = '11px monospace';
     ctx.fillStyle = 'rgba(150,150,150,0.5)';
     ctx.textAlign = 'left';
-    ctx.fillText('WASD: move | Mouse: aim', CONFIG.HUD_PADDING, this.renderer.height - 12);
+    const tips = this.debugMode
+      ? 'WASD: move | Mouse: aim | N: next tier | G: god mode | M: +50 mass'
+      : 'WASD: move | Mouse: aim';
+    ctx.fillText(tips, CONFIG.HUD_PADDING, this.renderer.height - 12);
   }
 
   private handleClick(x: number, y: number): void {
     const w = this.renderer.width;
     const h = this.renderer.height;
+
+    if (this.gameState === GameState.Menu) {
+      const result = this.menuScreen.handleClick(x, y, w, h);
+      if (result) {
+        this.debugMode = result.debug;
+        this.debugOverlay.setEnabled(this.debugMode);
+        this.menuScreen.hide();
+        this.registerEvents();
+        this.startGame();
+      }
+      return;
+    }
+
     if (this.upgradeScreen.handleClick(x, y, w, h)) return;
     this.deathScreen.handleClick(x, y, w, h);
     this.winScreen.handleClick(x, y, w, h);
+  }
+
+  private handleDebugKey(key: string): void {
+    if (this.gameState !== GameState.Playing) return;
+
+    switch (key.toLowerCase()) {
+      case 'n': {
+        // Skip to next tier
+        const players = this.world.query('PlayerControlled');
+        if (players.length > 0) {
+          const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+          const tier = this.tierManager.getCurrentTier();
+          ctrl.evolutionMass = tier.evolutionThreshold;
+        }
+        break;
+      }
+      case 'g':
+        // Toggle god mode
+        this.debugOverlay.toggleGodMode();
+        break;
+      case 'm': {
+        // Add mass
+        const players = this.world.query('PlayerControlled');
+        if (players.length > 0) {
+          const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+          const physics = players[0].getComponent<Physics>('Physics');
+          ctrl.evolutionMass += 50;
+          if (physics) physics.mass += 50;
+        }
+        break;
+      }
+      case 'e': {
+        // Refill energy
+        const players = this.world.query('PlayerControlled');
+        if (players.length > 0) {
+          players[0].getComponent<PlayerControlled>('PlayerControlled')!.energy = CONFIG.ENERGY_MAX;
+        }
+        break;
+      }
+      case 'c': {
+        // Add CP
+        const players = this.world.query('PlayerControlled');
+        if (players.length > 0) {
+          players[0].getComponent<PlayerControlled>('PlayerControlled')!.cp += 10;
+        }
+        break;
+      }
+    }
   }
 
   private restart(): void {

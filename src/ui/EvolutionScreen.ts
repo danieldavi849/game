@@ -30,6 +30,12 @@ export class EvolutionScreen {
     return this.visible;
   }
 
+  /** Immediately hide without animation (used when upgrade screen takes over) */
+  forceHide(): void {
+    this.visible = false;
+    this.onComplete = null;
+  }
+
   /** Update animation */
   update(dt: number): void {
     if (!this.visible) return;

@@ -47,8 +47,10 @@ export enum CollisionLayer {
 
 /** Game state */
 export enum GameState {
+  Menu = 'menu',
   Playing = 'playing',
   Evolving = 'evolving',
+  Upgrading = 'upgrading',
   Dead = 'dead',
   Won = 'won',
   Paused = 'paused',
