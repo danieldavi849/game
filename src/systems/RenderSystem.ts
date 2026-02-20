@@ -100,8 +100,13 @@ export class RenderSystem implements System {
   }
 
   private createGraphics(r: Renderable, isPlayer: boolean): void {
-    r.graphics = new PIXI.Graphics();
-    const g = r.graphics;
+    // In PixiJS v8, Graphics should not have children.
+    // We use a Container to group the shape and any additional overlays (like shields).
+    const container = new PIXI.Container();
+    r.graphics = container as any; // Renderable.graphics is currently typed as Graphics, but Container works (they share Transform)
+
+    const g = new PIXI.Graphics();
+    container.addChild(g);
 
     // Convert hex string to number
     const colorNum = parseInt(r.color.replace('#', ''), 16);
@@ -109,7 +114,6 @@ export class RenderSystem implements System {
     // Draw Glow (simplified for WebGL without custom shaders)
     if (r.glowColor && r.glowRadius > 0) {
       const glowNum = parseInt(r.glowColor.replace('#', ''), 16);
-      // We can draw a larger, low-alpha circle as a fake glow
       g.circle(0, 0, r.radius + r.glowRadius);
       g.fill({ color: glowNum, alpha: 0.2 });
     }
@@ -155,11 +159,11 @@ export class RenderSystem implements System {
       // Shield container (updated dynamically)
       const shield = new PIXI.Graphics();
       shield.label = 'shield';
-      g.addChild(shield);
+      container.addChild(shield);
     }
 
-    // Ensure smaller entities render on top by using zIndex (PIXI requires sortableChildren)
+    // Ensure smaller entities render on top by using zIndex (PIXI requires sortableChildren = true on stage)
     // We invert radius so smaller = higher zIndex
-    g.zIndex = 1000 - r.radius;
+    container.zIndex = 1000 - r.radius;
   }
 }

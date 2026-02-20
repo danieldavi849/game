@@ -4,7 +4,7 @@ import * as PIXI from 'pixi.js';
 /** Visual properties for rendering */
 export class Renderable implements Component {
   readonly type = 'Renderable';
-  public graphics?: PIXI.Graphics;
+  public graphics?: PIXI.Container;
 
   constructor(
     public radius: number = 10,

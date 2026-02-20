@@ -112,7 +112,6 @@ export class Background {
     // 1. Update Grid
     this.gridGraphics.clear();
     const gridColorNum = parseInt(this.config.gridColor.replace('#', ''), 16);
-    this.gridGraphics.setStrokeStyle({ color: gridColorNum, width: 0.5 });
 
     const spacing = this.config.gridSpacing;
     const startX = Math.floor(viewBounds.left / spacing) * spacing;
@@ -128,7 +127,7 @@ export class Background {
       this.gridGraphics.moveTo(0, screenY);
       this.gridGraphics.lineTo(screenWidth, screenY);
     }
-    this.gridGraphics.stroke();
+    this.gridGraphics.stroke({ color: gridColorNum, width: 0.5 });
 
     // 2. Update Ambient Particles
     const baseScale = camera.worldToScreenScale(1);
