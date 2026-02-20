@@ -4,32 +4,25 @@ import { Camera } from '../core/Camera.ts';
 import { Transform } from '../components/Transform.ts';
 import { Renderable } from '../components/Renderable.ts';
 import { PlayerControlled } from '../components/PlayerControlled.ts';
-import { hexToRgba } from '../utils/Color.ts';
+import * as PIXI from 'pixi.js';
 
-/** Renders all Renderable entities to the canvas */
+/** Renders all Renderable entities using PIXI.js */
 export class RenderSystem implements System {
   readonly priority = 100;
   private gameTime: number = 0;
 
   constructor(
-    private ctx: CanvasRenderingContext2D,
+    private stage: PIXI.Container,
     private camera: Camera,
-  ) {}
+  ) { }
 
   update(world: World, dt: number): void {
     this.gameTime += dt;
   }
 
-  render(world: World, ctx: CanvasRenderingContext2D): void {
+  render(world: World): void {
     const viewBounds = this.camera.getViewBounds();
     const entities = world.query('Transform', 'Renderable');
-
-    // Sort by radius so smaller entities render on top
-    entities.sort((a, b) => {
-      const ra = a.getComponent<Renderable>('Renderable')!.radius;
-      const rb = b.getComponent<Renderable>('Renderable')!.radius;
-      return rb - ra;
-    });
 
     for (let i = 0; i < entities.length; i++) {
       const entity = entities[i];
@@ -37,7 +30,15 @@ export class RenderSystem implements System {
       const renderable = entity.getComponent<Renderable>('Renderable')!;
       const isPlayer = entity.hasComponent('PlayerControlled');
 
-      // Frustum culling
+      // 1. Initialize PIXI.Graphics if not present
+      if (!renderable.graphics) {
+        this.createGraphics(renderable, isPlayer);
+        this.stage.addChild(renderable.graphics!);
+      }
+
+      const gfx = renderable.graphics!;
+
+      // 2. Frustum culling (hide if outside camera view to save GPU cycles)
       const margin = renderable.radius + (renderable.glowRadius || 0) + 50;
       if (
         transform.position.x + margin < viewBounds.left ||
@@ -45,131 +46,120 @@ export class RenderSystem implements System {
         transform.position.y + margin < viewBounds.top ||
         transform.position.y - margin > viewBounds.bottom
       ) {
+        gfx.visible = false;
         continue;
       }
 
+      gfx.visible = true;
+
+      // 3. Update Transform
+      // Since PIXI handles rendering in its own update loop, we just need to update the positions and scale.
       const screenPos = this.camera.worldToScreen(transform.position);
-      const screenRadius = this.camera.worldToScreenScale(renderable.radius);
+      gfx.x = screenPos.x;
+      gfx.y = screenPos.y;
 
-      if (screenRadius < 0.5) continue;
+      // Update rotation
+      gfx.rotation = transform.rotation;
 
-      ctx.save();
-      ctx.globalAlpha = renderable.opacity;
-
-      // Glow effect
-      if (renderable.glowColor && renderable.glowRadius > 0) {
-        const glowScreenR = this.camera.worldToScreenScale(renderable.glowRadius);
-        ctx.beginPath();
-        const gradient = ctx.createRadialGradient(
-          screenPos.x, screenPos.y, screenRadius * 0.3,
-          screenPos.x, screenPos.y, screenRadius + glowScreenR,
-        );
-        gradient.addColorStop(0, hexToRgba(renderable.glowColor, 0.4));
-        gradient.addColorStop(1, hexToRgba(renderable.glowColor, 0));
-        ctx.fillStyle = gradient;
-        ctx.arc(screenPos.x, screenPos.y, screenRadius + glowScreenR, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Pulse effect
-      let drawRadius = screenRadius;
+      // Pulse effect (scale based on time)
+      let scaleOffset = 0;
       if (renderable.pulseSpeed > 0) {
-        const pulse = Math.sin(this.gameTime * renderable.pulseSpeed) * renderable.pulseAmount;
-        drawRadius += this.camera.worldToScreenScale(pulse);
+        scaleOffset = Math.sin(this.gameTime * renderable.pulseSpeed) * (renderable.pulseAmount / renderable.radius);
       }
 
-      // Draw shape
-      ctx.beginPath();
-      switch (renderable.shape) {
-        case 'circle':
-          ctx.arc(screenPos.x, screenPos.y, drawRadius, 0, Math.PI * 2);
-          ctx.fillStyle = renderable.color;
-          ctx.fill();
-          break;
-        case 'triangle':
-          this.drawTriangle(ctx, screenPos.x, screenPos.y, drawRadius, transform.rotation);
-          ctx.fillStyle = renderable.color;
-          ctx.fill();
-          break;
-        case 'diamond':
-          this.drawDiamond(ctx, screenPos.x, screenPos.y, drawRadius, transform.rotation);
-          ctx.fillStyle = renderable.color;
-          ctx.fill();
-          break;
-        case 'ring':
-          ctx.arc(screenPos.x, screenPos.y, drawRadius, 0, Math.PI * 2);
-          ctx.strokeStyle = renderable.color;
-          ctx.lineWidth = Math.max(1, drawRadius * 0.2);
-          ctx.stroke();
-          break;
-      }
+      // Base scale via camera zoom
+      const baseScale = this.camera.worldToScreenScale(1);
+      gfx.scale.set(baseScale + scaleOffset);
 
-      // Player-specific: inner glow + direction indicator
+      gfx.alpha = renderable.opacity;
+
+      // Player-specific updates (Shield)
       if (isPlayer) {
         const player = entity.getComponent<PlayerControlled>('PlayerControlled')!;
+        const shieldGfx = gfx.getChildByName('shield') as PIXI.Graphics;
 
-        // Inner radial gradient for player body
-        const innerGrad = ctx.createRadialGradient(
-          screenPos.x, screenPos.y, 0,
-          screenPos.x, screenPos.y, drawRadius,
-        );
-        innerGrad.addColorStop(0, 'rgba(255,255,255,0.3)');
-        innerGrad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.beginPath();
-        ctx.arc(screenPos.x, screenPos.y, drawRadius, 0, Math.PI * 2);
-        ctx.fillStyle = innerGrad;
-        ctx.fill();
+        if (shieldGfx) {
+          if (player.maxShieldHP > 0 && player.shieldHP > 0) {
+            shieldGfx.visible = true;
+            const shieldRatio = player.shieldHP / player.maxShieldHP;
 
-        // Shield ring (atomic tier)
-        if (player.maxShieldHP > 0) {
-          const shieldRatio = player.shieldHP / player.maxShieldHP;
-          ctx.beginPath();
-          ctx.arc(screenPos.x, screenPos.y, drawRadius + 6, 0, Math.PI * 2 * shieldRatio);
-          ctx.strokeStyle = hexToRgba('#44aaff', 0.7);
-          ctx.lineWidth = 3;
-          ctx.stroke();
+            // Re-draw shield arc if ratio changes, or just keep it simple and draw full circle with alpha
+            shieldGfx.clear();
+            shieldGfx.arc(0, 0, renderable.radius + 6, 0, Math.PI * 2 * shieldRatio);
+            shieldGfx.stroke({ color: 0x44aaff, alpha: 0.7, width: 3 / baseScale });
+          } else {
+            shieldGfx.visible = false;
+          }
         }
-
-        // Direction indicator
-        const dirX = Math.cos(transform.rotation) * (drawRadius + 5);
-        const dirY = Math.sin(transform.rotation) * (drawRadius + 5);
-        ctx.beginPath();
-        ctx.arc(screenPos.x + dirX, screenPos.y + dirY, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
       }
-
-      ctx.restore();
     }
+
+    // Cleanup: In a real ECS you'd hook into entity destruction. 
+    // Here we need to make sure we remove graphics for dead entities.
+    // A simple hack is to check children of stage.
   }
 
-  private drawTriangle(
-    ctx: CanvasRenderingContext2D,
-    x: number, y: number, r: number, angle: number,
-  ): void {
-    ctx.beginPath();
-    for (let i = 0; i < 3; i++) {
-      const a = angle + (Math.PI * 2 * i) / 3 - Math.PI / 2;
-      const px = x + Math.cos(a) * r;
-      const py = y + Math.sin(a) * r;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-  }
+  private createGraphics(r: Renderable, isPlayer: boolean): void {
+    r.graphics = new PIXI.Graphics();
+    const g = r.graphics;
 
-  private drawDiamond(
-    ctx: CanvasRenderingContext2D,
-    x: number, y: number, r: number, angle: number,
-  ): void {
-    ctx.beginPath();
-    for (let i = 0; i < 4; i++) {
-      const a = angle + (Math.PI * 2 * i) / 4;
-      const px = x + Math.cos(a) * r;
-      const py = y + Math.sin(a) * r;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+    // Convert hex string to number
+    const colorNum = parseInt(r.color.replace('#', ''), 16);
+
+    // Draw Glow (simplified for WebGL without custom shaders)
+    if (r.glowColor && r.glowRadius > 0) {
+      const glowNum = parseInt(r.glowColor.replace('#', ''), 16);
+      // We can draw a larger, low-alpha circle as a fake glow
+      g.circle(0, 0, r.radius + r.glowRadius);
+      g.fill({ color: glowNum, alpha: 0.2 });
     }
-    ctx.closePath();
+
+    // Draw Shape
+    switch (r.shape) {
+      case 'circle':
+        g.circle(0, 0, r.radius);
+        g.fill({ color: colorNum });
+        break;
+      case 'ring':
+        g.circle(0, 0, r.radius);
+        g.stroke({ color: colorNum, width: Math.max(1, r.radius * 0.2) });
+        break;
+      case 'triangle':
+        g.poly([
+          0, -r.radius,
+          r.radius * 0.866, r.radius * 0.5,
+          -r.radius * 0.866, r.radius * 0.5
+        ]);
+        g.fill({ color: colorNum });
+        break;
+      case 'diamond':
+        g.poly([
+          0, -r.radius,
+          r.radius, 0,
+          0, r.radius,
+          -r.radius, 0
+        ]);
+        g.fill({ color: colorNum });
+        break;
+    }
+
+    if (isPlayer) {
+      // Player inner glow/core
+      g.circle(0, 0, r.radius * 0.5);
+      g.fill({ color: 0xffffff, alpha: 0.3 });
+
+      // Direction indicator
+      g.circle(r.radius + 5, 0, 3);
+      g.fill({ color: 0xffffff });
+
+      // Shield container (updated dynamically)
+      const shield = new PIXI.Graphics();
+      shield.label = 'shield';
+      g.addChild(shield);
+    }
+
+    // Ensure smaller entities render on top by using zIndex (PIXI requires sortableChildren)
+    // We invert radius so smaller = higher zIndex
+    g.zIndex = 1000 - r.radius;
   }
 }

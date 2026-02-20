@@ -39,40 +39,41 @@ import { CONFIG } from './utils/Constants.ts';
 
 /** Top-level game class: owns loop, state, systems, and coordinates everything */
 export class Game {
-  private loop: GameLoop;
-  private eventBus: EventBus;
-  private camera: Camera;
-  private inputManager: InputManager;
-  private world: World;
+  private loop!: GameLoop;
+  private eventBus!: EventBus;
+  private camera!: Camera;
+  private inputManager!: InputManager;
+  private world!: World;
   private renderer: Renderer;
-  private background: Background;
+  private uiCtx!: CanvasRenderingContext2D;
+  private background!: Background;
 
   // Systems
-  private inputSystem: InputSystem;
-  private physicsSystem: PhysicsSystem;
-  private collisionSystem: CollisionSystem;
-  private consumptionSystem: ConsumptionSystem;
-  private aiSystem: AISystem;
-  private energySystem: EnergySystem;
-  private evolutionSystem: EvolutionSystem;
-  private particleSystem: ParticleSystem;
-  private cameraSystem: CameraSystem;
-  private renderSystem: RenderSystem;
-  private relicSystem: RelicSystem;
+  private inputSystem!: InputSystem;
+  private physicsSystem!: PhysicsSystem;
+  private collisionSystem!: CollisionSystem;
+  private consumptionSystem!: ConsumptionSystem;
+  private aiSystem!: AISystem;
+  private energySystem!: EnergySystem;
+  private evolutionSystem!: EvolutionSystem;
+  private particleSystem!: ParticleSystem;
+  private cameraSystem!: CameraSystem;
+  private renderSystem!: RenderSystem;
+  private relicSystem!: RelicSystem;
 
   // Tier
-  private tierManager: TierManager;
+  private tierManager!: TierManager;
 
   // UI
-  private hud: HUD;
-  private deathScreen: DeathScreen;
-  private evolutionScreen: EvolutionScreen;
-  private winScreen: WinScreen;
-  private upgradeScreen: UpgradeScreen;
-  private menuScreen: MenuScreen;
-  private debugOverlay: DebugOverlay;
-  private dealScreen: DealScreen;
-  private relicHUD: RelicHUD;
+  private hud!: HUD;
+  private deathScreen!: DeathScreen;
+  private evolutionScreen!: EvolutionScreen;
+  private winScreen!: WinScreen;
+  private upgradeScreen!: UpgradeScreen;
+  private menuScreen!: MenuScreen;
+  private debugOverlay!: DebugOverlay;
+  private dealScreen!: DealScreen;
+  private relicHUD!: RelicHUD;
 
   private gameState: GameState = GameState.Menu;
   private evolutionTimer = 0;
@@ -81,14 +82,18 @@ export class Game {
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new Renderer(canvas);
-    const ctx = this.renderer.getContext();
+  }
+
+  async init(): Promise<void> {
+    await this.renderer.init();
 
     this.eventBus = new EventBus();
     this.camera = new Camera();
     this.camera.setViewport(this.renderer.width, this.renderer.height);
-    this.inputManager = new InputManager(canvas);
+    this.inputManager = new InputManager(this.renderer.getCanvas());
     this.world = new World();
     this.background = new Background();
+    this.background.init(this.renderer.getApp().stage);
     this.loop = new GameLoop();
 
     // Systems
@@ -101,10 +106,26 @@ export class Game {
     this.evolutionSystem = new EvolutionSystem(this.eventBus);
     this.particleSystem = new ParticleSystem();
     this.cameraSystem = new CameraSystem(this.camera, this.eventBus);
-    this.renderSystem = new RenderSystem(ctx, this.camera);
     this.relicSystem = new RelicSystem();
 
     this.tierManager = new TierManager(this.world, this.eventBus);
+
+    // Create an overlay canvas for traditional 2D rendering (so PIXI handles background/sprites, Canvas handles UI)
+    const uiCanvas = document.createElement('canvas');
+    uiCanvas.width = this.renderer.width;
+    uiCanvas.height = this.renderer.height;
+    uiCanvas.style.position = 'absolute';
+    uiCanvas.style.top = '0';
+    uiCanvas.style.left = '0';
+    uiCanvas.style.pointerEvents = 'none'; // let clicks pass through to PIXI canvas
+    this.renderer.getCanvas().parentElement?.appendChild(uiCanvas);
+
+    const ctx = uiCanvas.getContext('2d') as CanvasRenderingContext2D;
+    this.uiCtx = ctx;
+
+    // Initialize systems that still need the 2D context
+    // RenderSystem now takes the PIXI stage
+    this.renderSystem = new RenderSystem(this.renderer.getApp().stage, this.camera);
 
     // UI
     this.hud = new HUD();
@@ -117,11 +138,13 @@ export class Game {
     this.dealScreen = new DealScreen();
     this.relicHUD = new RelicHUD();
 
+    this.registerEvents();
+
     // Show menu first
     this.gameState = GameState.Menu;
     this.menuScreen.show();
 
-    // Start the render loop (menu needs it)
+    // Start the render loop
     this.loop.start(
       (dt) => this.update(dt),
       () => this.render(),
@@ -131,15 +154,17 @@ export class Game {
     window.addEventListener('resize', () => {
       this.renderer.resize();
       this.camera.setViewport(this.renderer.width, this.renderer.height);
+      uiCanvas.width = this.renderer.width;
+      uiCanvas.height = this.renderer.height;
     });
 
     // Click handler for UI buttons
-    canvas.addEventListener('click', (e) => {
+    this.renderer.getCanvas().addEventListener('click', (e) => {
       this.handleClick(e.clientX, e.clientY);
     });
 
     // Mousemove for screen hover states
-    canvas.addEventListener('mousemove', (e) => {
+    this.renderer.getCanvas().addEventListener('mousemove', (e) => {
       this.upgradeScreen.handleMouseMove(e.clientX, e.clientY);
       this.menuScreen.handleMouseMove(e.clientX, e.clientY);
       this.dealScreen.handleMouseMove(e.clientX, e.clientY);
@@ -484,9 +509,11 @@ export class Game {
   }
 
   private render(): void {
-    const ctx = this.renderer.getContext();
+    const ctx = this.uiCtx;
+    // Clear UI canvas
     const w = this.renderer.width;
     const h = this.renderer.height;
+    ctx.clearRect(0, 0, w, h);
 
     // Menu screen
     if (this.gameState === GameState.Menu) {
@@ -495,13 +522,14 @@ export class Game {
     }
 
     // Background
-    this.background.render(ctx, this.camera, w, h);
+    this.background.render(this.camera, w, h);
 
     // Mechanic renders (e.g. UV zones, proton rings)
     this.tierManager.render(ctx, this.camera);
 
     // World entities
-    this.renderSystem.render(this.world, ctx);
+    // RenderSystem manipulates PIXI objects directly, doesn't need Canvas 2D ctx
+    this.renderSystem.render(this.world);
 
     // HUD (always on top during gameplay)
     if (this.gameState !== GameState.Dead && this.gameState !== GameState.Won) {

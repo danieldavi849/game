@@ -1,3 +1,4 @@
+import { Quadtree } from '../utils/Quadtree.ts';
 import { System } from '../ecs/System.ts';
 import { World } from '../ecs/World.ts';
 import { EventBus } from '../core/EventBus.ts';
@@ -36,15 +37,31 @@ export class ConsumptionSystem implements System {
   update(world: World, _dt: number): void {
     if (this.pendingConsumptions.length === 0) return;
 
+    // Build Quadtree of consumables for efficient chain-consume lookups
+    const boundsSize = Math.max(CONFIG.WORLD_WIDTH, CONFIG.WORLD_HEIGHT);
+    const qt = new Quadtree(0, 0, boundsSize, boundsSize, 5);
+    const consumables = world.query('Consumable', 'Transform');
+    for (let i = 0; i < consumables.length; i++) {
+      const e = consumables[i];
+      const t = e.getComponent<Transform>('Transform')!;
+      const r = e.getComponent<Renderable>('Renderable');
+      qt.insert({
+        id: e.id,
+        position: t.position.clone(),
+        radius: r?.radius ?? 5,
+        entity: e
+      });
+    }
+
     // Work from a snapshot so chain-consumes added mid-loop are handled next frame
     const batch = this.pendingConsumptions.splice(0);
 
     for (const event of batch) {
-      this.processConsumption(world, event);
+      this.processConsumption(world, event, qt);
     }
   }
 
-  private processConsumption(world: World, event: ConsumeEvent): void {
+  private processConsumption(world: World, event: ConsumeEvent, qt: Quadtree): void {
     const consumed = world.getEntity(event.consumedId);
     if (!consumed || !consumed.active) return;
 
@@ -121,11 +138,6 @@ export class ConsumptionSystem implements System {
       );
     }
 
-    // ── Chain consume ─────────────────────────────────────────
-    if (playerCtrl.relicChainConsumeChance > 0 && Math.random() < playerCtrl.relicChainConsumeChance) {
-      this.tryChainConsume(world, player.id, playerCtrl, event.position);
-    }
-
     // ── Emit events ───────────────────────────────────────────
     this.eventBus.emit(GameEvents.MASS_CHANGED, {
       playerId: player.id,
@@ -134,6 +146,11 @@ export class ConsumptionSystem implements System {
     });
     this.eventBus.emit(GameEvents.ENERGY_CHANGED, { playerId: player.id, energy: playerCtrl.energy });
     this.eventBus.emit(GameEvents.SCREEN_SHAKE, { intensity: CONFIG.SHAKE_INTENSITY_EAT });
+
+    // ── Chain consume ─────────────────────────────────────────
+    if (playerCtrl.relicChainConsumeChance > 0 && Math.random() < playerCtrl.relicChainConsumeChance) {
+      this.tryChainConsume(world, player.id, playerCtrl, event.position, qt);
+    }
   }
 
   /** Try to eat one random nearby entity for free (chain effect) */
@@ -142,16 +159,20 @@ export class ConsumptionSystem implements System {
     playerId: number,
     ctrl: PlayerControlled,
     pos: { x: number; y: number },
+    qt: Quadtree,
   ): void {
     const player = world.getEntity(playerId);
     if (!player) return;
     const renderable = player.getComponent<Renderable>('Renderable');
     const playerRadius = renderable?.radius ?? 10;
 
-    const nearby = world.query('Consumable', 'Transform');
+    const nearby = qt.queryRange(pos.x, pos.y, 200);
     let closest: { id: number; dist: number } | null = null;
 
-    for (const e of nearby) {
+    for (const otherQtEntity of nearby) {
+      const e = otherQtEntity.entity;
+      if (!e) continue;
+
       if (e.id === playerId || e.hasComponent('PlayerControlled')) continue;
       const t = e.getComponent<Transform>('Transform')!;
       const er = e.getComponent<Renderable>('Renderable');

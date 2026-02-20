@@ -1,8 +1,10 @@
 import { Component } from '../ecs/Component.ts';
+import * as PIXI from 'pixi.js';
 
 /** Visual properties for rendering */
 export class Renderable implements Component {
   readonly type = 'Renderable';
+  public graphics?: PIXI.Graphics;
 
   constructor(
     public radius: number = 10,
@@ -14,5 +16,5 @@ export class Renderable implements Component {
     public shape: 'circle' | 'triangle' | 'diamond' | 'ring' = 'circle',
     public pulseSpeed: number = 0,
     public pulseAmount: number = 0,
-  ) {}
+  ) { }
 }

@@ -1,6 +1,6 @@
 import { System } from '../ecs/System.ts';
 import { World } from '../ecs/World.ts';
-import { SpatialGrid } from '../core/SpatialGrid.ts';
+import { Quadtree, QuadtreeEntity } from '../utils/Quadtree.ts';
 import { EventBus } from '../core/EventBus.ts';
 import { Transform } from '../components/Transform.ts';
 import { Collider } from '../components/Collider.ts';
@@ -12,26 +12,30 @@ import { Hazard } from '../components/Hazard.ts';
 import { GameEvents, CollisionLayer } from '../types/index.ts';
 import { CONFIG } from '../utils/Constants.ts';
 
-/** Broadphase (SpatialGrid) + narrowphase (circle-circle) collision detection */
+/** Broadphase (Quadtree) + narrowphase (circle-circle) collision detection */
 export class CollisionSystem implements System {
   readonly priority = 20;
-  private grid: SpatialGrid;
 
-  constructor(private eventBus: EventBus) {
-    this.grid = new SpatialGrid(CONFIG.SPATIAL_GRID_CELL_SIZE);
-  }
+  constructor(private eventBus: EventBus) { }
 
   update(world: World, dt: number): void {
-    this.grid.clear();
-
     const collidables = world.query('Transform', 'Collider');
 
-    // Broadphase: insert all into spatial grid
+    // Quadtree needs to encompass the entire bounds of our active simulation space
+    const boundsSize = Math.max(CONFIG.WORLD_WIDTH, CONFIG.WORLD_HEIGHT);
+    const qt = new Quadtree(0, 0, boundsSize, boundsSize, 5);
+
+    // Broadphase: insert all into Quadtree
     for (let i = 0; i < collidables.length; i++) {
       const e = collidables[i];
       const t = e.getComponent<Transform>('Transform')!;
       const c = e.getComponent<Collider>('Collider')!;
-      this.grid.insert(e.id, t.position.x, t.position.y, c.radius);
+      qt.insert({
+        id: e.id,
+        position: t.position.clone(),
+        radius: c.radius,
+        entity: e
+      });
     }
 
     // Check collisions for ALL players (multiplayer-ready)
@@ -45,17 +49,18 @@ export class CollisionSystem implements System {
       const playerPhysics = player.getComponent<Physics>('Physics');
       const playerRenderable = player.getComponent<Renderable>('Renderable');
 
-      const nearby = this.grid.query(
+      const searchRadius = playerCollider.radius + 100;
+      const nearby = qt.queryRange(
         playerTransform.position.x,
         playerTransform.position.y,
-        playerCollider.radius + 100,
+        searchRadius,
       );
 
       for (let i = 0; i < nearby.length; i++) {
-        const otherId = nearby[i];
-        if (otherId === player.id) continue;
+        const otherQtEntity = nearby[i];
+        if (otherQtEntity.id === player.id) continue;
 
-        const other = world.getEntity(otherId);
+        const other = otherQtEntity.entity;
         if (!other || !other.active) continue;
 
         const otherTransform = other.getComponent<Transform>('Transform')!;
@@ -63,10 +68,10 @@ export class CollisionSystem implements System {
         if (!otherCollider) continue;
 
         // Circle-circle test
-        const dist = playerTransform.position.dist(otherTransform.position);
+        const distSq = playerTransform.position.distSq(otherTransform.position);
         const minDist = playerCollider.radius + otherCollider.radius;
 
-        if (dist < minDist) {
+        if (distSq < minDist * minDist) {
           // Consumable collision (food OR other players with Consumable)
           const consumable = other.getComponent<Consumable>('Consumable');
           if (consumable) {
