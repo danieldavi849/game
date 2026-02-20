@@ -32,7 +32,7 @@ export class RenderSystem implements System {
 
       // 1. Initialize PIXI.Graphics if not present
       if (!renderable.graphics) {
-        this.createGraphics(renderable, isPlayer);
+        this.createGraphics(renderable, isPlayer, entity.id);
         this.stage.addChild(renderable.graphics!);
       }
 
@@ -94,15 +94,22 @@ export class RenderSystem implements System {
       }
     }
 
-    // Cleanup: In a real ECS you'd hook into entity destruction. 
-    // Here we need to make sure we remove graphics for dead entities.
-    // A simple hack is to check children of stage.
+    // Cleanup dead entities
+    const activeIds = new Set(entities.map(e => e.id));
+    for (let i = this.stage.children.length - 1; i >= 0; i--) {
+      const child = this.stage.children[i] as any;
+      if (child.entityId !== undefined && !activeIds.has(child.entityId)) {
+        this.stage.removeChild(child);
+        child.destroy({ children: true });
+      }
+    }
   }
 
-  private createGraphics(r: Renderable, isPlayer: boolean): void {
+  private createGraphics(r: Renderable, isPlayer: boolean, entityId: number): void {
     // In PixiJS v8, Graphics should not have children.
     // We use a Container to group the shape and any additional overlays (like shields).
     const container = new PIXI.Container();
+    (container as any).entityId = entityId;
     r.graphics = container as any; // Renderable.graphics is currently typed as Graphics, but Container works (they share Transform)
 
     const g = new PIXI.Graphics();
