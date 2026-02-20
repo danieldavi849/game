@@ -25,16 +25,18 @@ export class EnergySystem implements System {
     const players = world.query('PlayerControlled');
     if (players.length === 0) return;
 
-    const drainRate = CONFIG.ENERGY_DRAIN_BASE + this.tierIndex * CONFIG.ENERGY_DRAIN_PER_TIER;
+    const baseDrainRate = CONFIG.ENERGY_DRAIN_BASE + this.tierIndex * CONFIG.ENERGY_DRAIN_PER_TIER;
 
     for (let i = 0; i < players.length; i++) {
       const player = players[i];
       const ctrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
       const physics = player.getComponent<Physics>('Physics');
 
-      // Passive drain
+      // Passive drain — scaled by relic drain multiplier
+      const drainRate = baseDrainRate * ctrl.relicEnergyDrainMult;
       ctrl.energy -= drainRate * dt;
-      ctrl.energy = clamp(ctrl.energy, 0, CONFIG.ENERGY_MAX);
+      const energyMax = CONFIG.ENERGY_MAX + ctrl.relicEnergyMaxBonus - ctrl.devilEnergyPenalty;
+      ctrl.energy = clamp(ctrl.energy, ctrl.relicEnergyFloor, energyMax);
 
       this.eventBus.emit(GameEvents.ENERGY_CHANGED, { playerId: player.id, energy: ctrl.energy });
 

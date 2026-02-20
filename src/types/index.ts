@@ -75,6 +75,7 @@ export const GameEvents = {
   SCREEN_SHAKE: 'screen:shake',
   SLOW_MO: 'effect:slowmo',
   UPGRADE_CHOSEN: 'upgrade:chosen',
+  ACTIVE_ABILITY_USED: 'ability:used',
 } as const;
 
 /** Upgrade that can be purchased with CP between tiers */
