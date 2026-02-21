@@ -78,6 +78,11 @@ export class TierManager {
     return this.tiers[index];
   }
 
+  /** Total number of tiers */
+  getTierCount(): number {
+    return this.tiers.length;
+  }
+
   /** Initialize the first tier */
   startFirstTier(): void {
     this.currentTierIndex = 0;
