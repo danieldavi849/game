@@ -72,6 +72,18 @@ export class RenderSystem implements System {
       const baseScale = this.camera.worldToScreenScale(1);
       gfx.scale.set(baseScale + scaleOffset);
 
+      // Sync sprite dimensions to current radius (radius can change, e.g. when player grows)
+      if (renderable.spriteKey) {
+        const spriteChild = gfx.getChildAt(0);
+        if (spriteChild instanceof PIXI.Sprite) {
+          const diameter = renderable.radius * 2;
+          if (spriteChild.width !== diameter) {
+            spriteChild.width = diameter;
+            spriteChild.height = diameter;
+          }
+        }
+      }
+
       gfx.alpha = renderable.opacity;
 
       // Player-specific updates (Shield)
