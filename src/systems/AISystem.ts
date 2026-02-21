@@ -61,6 +61,9 @@ export class AISystem implements System {
         case BehaviorType.Patrol:
           this.wander(ai, transform, physics, dt);
           break;
+        case BehaviorType.Flock:
+          this.flock(entity.id, ai, transform, physics, entities, dt);
+          break;
       }
 
       // Face direction of movement
@@ -161,6 +164,69 @@ export class AISystem implements System {
         ai.zipping = false;
         ai.wanderTimer = randomRange(1.5, 4); // cooldown before next zip
       }
+    }
+  }
+
+  private flock(
+    id: number,
+    ai: AIBehavior,
+    transform: Transform,
+    physics: Physics,
+    allEntities: import('../ecs/Entity.ts').Entity[],
+    dt: number
+  ): void {
+    // Escape behavior if near player
+    const toPlayer = this.playerPos.sub(transform.position);
+    if (toPlayer.magSq() < ai.fleeRadius * ai.fleeRadius) {
+      physics.acceleration = transform.position.sub(this.playerPos).normalize().mul(ai.speed * 4);
+      return;
+    }
+
+    const separationDistSq = 900; // 30px
+    const neighborDistSq = 6400; // 80px
+
+    let count = 0;
+    const separate = new Vec2(0, 0);
+    const align = new Vec2(0, 0);
+    const cohere = new Vec2(0, 0);
+
+    for (let i = 0; i < allEntities.length; i++) {
+      const other = allEntities[i];
+      if (other.id === id) continue;
+
+      const otherAi = other.getComponent<AIBehavior>('AIBehavior');
+      if (!otherAi || otherAi.behavior !== BehaviorType.Flock) continue;
+
+      const otherTransform = other.getComponent<Transform>('Transform');
+      const otherPhysics = other.getComponent<Physics>('Physics');
+      if (!otherTransform || !otherPhysics) continue;
+
+      const diff = transform.position.sub(otherTransform.position);
+      const distSq = diff.magSq();
+
+      if (distSq > 0 && distSq < neighborDistSq) {
+        // Separation (push away from too close)
+        if (distSq < separationDistSq) {
+          separate.addMut(diff.normalize().div(Math.sqrt(distSq)));
+        }
+        // Alignment (match velocity)
+        align.addMut(otherPhysics.velocity);
+        // Cohesion (move toward center of mass)
+        cohere.addMut(otherTransform.position);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      separate.divMut(count).normalizeMut().mulMut(ai.speed * 2);
+      align.divMut(count).normalizeMut().mulMut(ai.speed);
+      cohere.divMut(count).subMut(transform.position).normalizeMut().mulMut(ai.speed * 0.8);
+
+      const flockForce = separate.add(align).add(cohere);
+      physics.acceleration = flockForce.mul(2);
+    } else {
+      // If no neighbors, just wander
+      this.wander(ai, transform, physics, dt);
     }
   }
 }

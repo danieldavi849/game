@@ -10,7 +10,7 @@ export class EvolutionSystem implements System {
   private threshold: number = 100;
   private evolving: boolean = false;
 
-  constructor(private eventBus: EventBus) {}
+  constructor(private eventBus: EventBus) { }
 
   /** Set the mass threshold for the current tier */
   setThreshold(threshold: number): void {
@@ -34,16 +34,30 @@ export class EvolutionSystem implements System {
     for (let i = 0; i < players.length; i++) {
       const ctrl = players[i].getComponent<PlayerControlled>('PlayerControlled')!;
 
-      if (ctrl.evolutionMass >= this.threshold) {
+      const currentThreshold = this.getThresholdForLevel(ctrl.level);
+
+      if (ctrl.evolutionMass >= currentThreshold) {
         this.evolving = true;
         this.eventBus.emit(GameEvents.EVOLUTION_READY, {
           playerId: players[i].id,
           mass: ctrl.evolutionMass,
-          threshold: this.threshold,
+          threshold: currentThreshold,
+          level: ctrl.level,
         });
         break;
       }
     }
+  }
+
+  /** Calculate dynamic threshold based on player level */
+  getDynamicThreshold(player: ReturnType<typeof World.prototype.getEntity>): number {
+    const ctrl = player?.getComponent<PlayerControlled>('PlayerControlled');
+    return ctrl ? this.getThresholdForLevel(ctrl.level) : this.threshold;
+  }
+
+  private getThresholdForLevel(level: number): number {
+    const levelInTier = (level - 1) % 10;
+    return Math.floor(this.threshold * (1 + 0.3 * levelInTier));
   }
 
   /** Get progress toward evolution for a specific player (0-1). Falls back to first player. */
@@ -55,6 +69,7 @@ export class EvolutionSystem implements System {
       ? players.find(p => p.id === playerId) ?? players[0]
       : players[0];
     const ctrl = target.getComponent<PlayerControlled>('PlayerControlled')!;
-    return Math.min(ctrl.evolutionMass / this.threshold, 1);
+    const currentThreshold = this.getThresholdForLevel(ctrl.level);
+    return Math.min(ctrl.evolutionMass / currentThreshold, 1);
   }
 }

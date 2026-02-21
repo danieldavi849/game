@@ -97,17 +97,22 @@ export class CollisionSystem implements System {
           // Hazard collision
           const hazard = other.getComponent<Hazard>('Hazard');
           if (hazard) {
-            this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
-              playerId: player.id,
-              damage: hazard.damage,
-              knockbackForce: hazard.knockbackForce,
-              position: otherTransform.position.clone(),
-            });
+            // Check invincibility timer (from dashing or recent hits)
+            const isInvincible = player.getComponent<PlayerControlled>('PlayerControlled')?.invincibilityTimer ?? 0;
 
-            // Knockback
-            if (playerPhysics) {
-              const pushDir = playerTransform.position.sub(otherTransform.position).normalize();
-              playerPhysics.velocity = pushDir.mul(hazard.knockbackForce);
+            if (isInvincible <= 0) {
+              this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+                playerId: player.id,
+                damage: hazard.damage,
+                knockbackForce: hazard.knockbackForce,
+                position: otherTransform.position.clone(),
+              });
+
+              // Knockback
+              if (playerPhysics) {
+                const pushDir = playerTransform.position.sub(otherTransform.position).normalize();
+                playerPhysics.velocity = pushDir.mul(hazard.knockbackForce);
+              }
             }
           }
         }

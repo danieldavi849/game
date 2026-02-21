@@ -23,15 +23,18 @@ import { EvolutionScreen } from './ui/EvolutionScreen.ts';
 import { WinScreen } from './ui/WinScreen.ts';
 import { UpgradeScreen } from './ui/UpgradeScreen.ts';
 import { MenuScreen } from './ui/MenuScreen.ts';
+import { GuideScreen } from './ui/GuideScreen.ts';
 import { DebugOverlay } from './ui/DebugOverlay.ts';
 import { DealScreen, DealChoice } from './ui/DealScreen.ts';
 import { RelicHUD } from './ui/RelicHUD.ts';
+import { ItemShopScreen } from './ui/ItemShopScreen.ts';
 import { Transform } from './components/Transform.ts';
 import { Physics } from './components/Physics.ts';
 import { Renderable } from './components/Renderable.ts';
 import { Collider } from './components/Collider.ts';
 import { PlayerControlled } from './components/PlayerControlled.ts';
 import { Consumable } from './components/Consumable.ts';
+import { Hazard } from './components/Hazard.ts';
 import { Vec2 } from './utils/Vec2.ts';
 import { RelicDef } from './relics/RelicDefs.ts';
 import { GameEvents, GameState, CollisionLayer, EntityType } from './types/index.ts';
@@ -71,9 +74,11 @@ export class Game {
   private winScreen!: WinScreen;
   private upgradeScreen!: UpgradeScreen;
   private menuScreen!: MenuScreen;
+  private guideScreen!: GuideScreen;
   private debugOverlay!: DebugOverlay;
   private dealScreen!: DealScreen;
   private relicHUD!: RelicHUD;
+  private itemShopScreen!: ItemShopScreen;
 
   private gameState: GameState = GameState.Menu;
   private evolutionTimer = 0;
@@ -134,9 +139,11 @@ export class Game {
     this.winScreen = new WinScreen(this.eventBus);
     this.upgradeScreen = new UpgradeScreen();
     this.menuScreen = new MenuScreen();
+    this.guideScreen = new GuideScreen();
     this.debugOverlay = new DebugOverlay();
     this.dealScreen = new DealScreen();
     this.relicHUD = new RelicHUD();
+    this.itemShopScreen = new ItemShopScreen();
 
     this.registerEvents();
 
@@ -167,6 +174,7 @@ export class Game {
     this.renderer.getCanvas().addEventListener('mousemove', (e) => {
       this.upgradeScreen.handleMouseMove(e.clientX, e.clientY);
       this.menuScreen.handleMouseMove(e.clientX, e.clientY);
+      this.guideScreen.handleMouseMove(e.clientX, e.clientY);
       this.dealScreen.handleMouseMove(e.clientX, e.clientY);
       this.relicHUD.handleMouseMove(
         e.clientX, e.clientY,
@@ -175,8 +183,15 @@ export class Game {
       );
     });
 
-    // Debug mode keyboard shortcuts
+    // Keyboard shortcuts (Tab for shop, Debug tools)
     window.addEventListener('keydown', (e) => {
+      // Prevent default Tab behavior (focus cycling)
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        this.toggleItemShop();
+        return;
+      }
+
       if (!this.debugMode) return;
       this.handleDebugKey(e.key);
     });
@@ -190,10 +205,13 @@ export class Game {
       this.loop.setTimeScale(0.3);
     });
 
-    this.eventBus.on(GameEvents.EVOLUTION_READY, () => {
+    this.eventBus.on(GameEvents.EVOLUTION_READY, (data: any) => {
       if (this.gameState !== GameState.Playing) return;
       this.gameState = GameState.Evolving;
       this.evolutionSystem.setEvolving(true);
+
+      const level = data?.level || 1;
+      const isPhaseChange = level % 10 === 0;
 
       // Slow-mo effect
       this.loop.setTimeScale(CONFIG.EVOLUTION_SLOWMO_FACTOR);
@@ -204,7 +222,7 @@ export class Game {
       const nextTierIndex = this.tierManager.getTierIndex() + 1;
 
       setTimeout(() => {
-        if (this.tierManager.isLastTier()) {
+        if (this.tierManager.isLastTier() && isPhaseChange) {
           // Win!
           this.loop.setTimeScale(1);
           this.gameState = GameState.Won;
@@ -216,84 +234,97 @@ export class Game {
         const nextName = nextTier?.displayName ?? 'Unknown';
         const nextColor = nextTier?.displayColor ?? '#ffffff';
 
-        this.evolutionScreen.show(
-          currentTier.displayName,
-          nextName,
-          nextColor,
-          () => {
-            // Force-hide evolution screen before showing deal/upgrade
-            this.evolutionScreen.forceHide();
+        const onEvolutionComplete = () => {
+          // Force-hide evolution screen before showing deal/upgrade
+          this.evolutionScreen.forceHide();
 
-            // Switch to Upgrading state — game systems frozen, UI updates run
-            this.gameState = GameState.Upgrading;
-            this.loop.setTimeScale(1);
+          // Switch to Upgrading state — game systems frozen, UI updates run
+          this.gameState = GameState.Upgrading;
+          this.loop.setTimeScale(1);
 
-            const players = this.world.query('PlayerControlled');
-            const ctrl = players.length > 0
-              ? players[0].getComponent<PlayerControlled>('PlayerControlled')!
-              : null;
+          const players = this.world.query('PlayerControlled');
+          const ctrl = players.length > 0
+            ? players[0].getComponent<PlayerControlled>('PlayerControlled')!
+            : null;
 
-            const advanceTier = () => {
+          const advanceTier = () => {
+            if (isPhaseChange) {
               this.tierManager.advanceToNextTier();
-              const newTier = this.tierManager.getCurrentTier();
-              this.evolutionSystem.setThreshold(newTier.evolutionThreshold);
-              this.evolutionSystem.setEvolving(false);
-              this.energySystem.setTierIndex(this.tierManager.getTierIndex());
-              this.background.setConfig(newTier.background);
-              this.hud.setTier(newTier.displayName, newTier.displayColor);
-              this.updateHudThreshold();
+            }
+            const newTier = this.tierManager.getCurrentTier();
 
-              if (this.pendingMassBonus > 0 && players.length > 0 && ctrl) {
-                ctrl.evolutionMass += this.pendingMassBonus;
-                const physics = players[0].getComponent<Physics>('Physics');
-                if (physics) physics.mass += this.pendingMassBonus;
-                this.pendingMassBonus = 0;
-              }
+            if (ctrl) {
+              ctrl.level += 1;
+              ctrl.evolutionMass = 0;
+            }
 
-              this.loop.setTimeScale(1);
-              this.gameState = GameState.Playing;
-            };
+            this.evolutionSystem.setEvolving(false);
+            this.energySystem.setTierIndex(this.tierManager.getTierIndex());
+            this.background.setConfig(newTier.background);
+            this.hud.setTier(newTier.displayName, newTier.displayColor);
+            this.updateHudThreshold();
 
-            const showRelicShop = () => {
-              const cp = ctrl?.cp ?? 0;
-              const ownedIds = ctrl?.relics ?? [];
-              this.upgradeScreen.show(cp, ownedIds, (relic: RelicDef | null) => {
-                if (relic && ctrl) {
-                  ctrl.relics.push(relic.id);
-                  ctrl.cp -= relic.cost;
-                  // Grant active ability if relic provides one and player has none yet
-                  if (relic.grantsActive && !ctrl.activeAbility) {
-                    ctrl.activeAbility = relic.grantsActive.id;
-                    ctrl.activeMaxCooldown = relic.grantsActive.cooldown;
-                    ctrl.activeCooldown = 0;
-                  }
-                }
-                advanceTier();
-              });
-            };
+            if (this.pendingMassBonus > 0 && players.length > 0 && ctrl) {
+              ctrl.evolutionMass += this.pendingMassBonus;
+              const physics = players[0].getComponent<Physics>('Physics');
+              if (physics) physics.mass += this.pendingMassBonus;
+              this.pendingMassBonus = 0;
+            }
 
-            // Show Devil/Angel deal screen first, then relic shop
-            this.dealScreen.show(ctrl?.relics ?? [], (deal: DealChoice) => {
-              if (ctrl && deal.type !== 'skip') {
-                if (deal.relic) {
-                  ctrl.relics.push(deal.relic.id);
-                  if (deal.energyCost > 0) {
-                    ctrl.devilEnergyPenalty += deal.energyCost;
-                    const newMax = CONFIG.ENERGY_MAX + ctrl.relicEnergyMaxBonus - ctrl.devilEnergyPenalty;
-                    if (ctrl.energy > newMax) ctrl.energy = Math.max(0, newMax);
-                  }
-                }
-                if (deal.ability && !ctrl.activeAbility) {
-                  ctrl.activeAbility = deal.ability.id;
-                  ctrl.activeMaxCooldown = deal.ability.cooldown;
+            this.loop.setTimeScale(1);
+            this.gameState = GameState.Playing;
+          };
+
+          const showRelicShop = () => {
+            const cp = ctrl?.cp ?? 0;
+            const ownedIds = ctrl?.mutations ?? [];
+            this.upgradeScreen.show(cp, ownedIds, (relic: RelicDef | null) => {
+              if (relic && ctrl) {
+                ctrl.mutations.push(relic.id);
+                ctrl.cp -= relic.cost;
+                // Grant active ability if relic provides one and player has none yet
+                if (relic.grantsActive && !ctrl.activeAbility) {
+                  ctrl.activeAbility = relic.grantsActive.id;
+                  ctrl.activeMaxCooldown = relic.grantsActive.cooldown;
                   ctrl.activeCooldown = 0;
                 }
               }
-              showRelicShop();
+              advanceTier();
             });
-          },
-        );
-      }, 600);
+          };
+
+          // Show Devil/Angel deal screen first, then relic shop
+          this.dealScreen.show(ctrl?.mutations ?? [], (deal: DealChoice) => {
+            if (ctrl && deal.type !== 'skip') {
+              if (deal.relic) {
+                ctrl.mutations.push(deal.relic.id);
+                if (deal.energyCost > 0) {
+                  ctrl.devilEnergyPenalty += deal.energyCost;
+                  const newMax = CONFIG.ENERGY_MAX + ctrl.relicEnergyMaxBonus - ctrl.devilEnergyPenalty;
+                  if (ctrl.energy > newMax) ctrl.energy = Math.max(0, newMax);
+                }
+              }
+              if (deal.ability && !ctrl.activeAbility) {
+                ctrl.activeAbility = deal.ability.id;
+                ctrl.activeMaxCooldown = deal.ability.cooldown;
+                ctrl.activeCooldown = 0;
+              }
+            }
+            showRelicShop();
+          });
+        };
+
+        if (isPhaseChange) {
+          this.evolutionScreen.show(
+            currentTier.displayName,
+            nextName,
+            nextColor,
+            onEvolutionComplete
+          );
+        } else {
+          onEvolutionComplete();
+        }
+      }, isPhaseChange ? 150 : 50);
     });
 
     this.eventBus.on(GameEvents.GAME_RESTART, () => {
@@ -333,10 +364,28 @@ export class Game {
         return;
       }
 
+      // Super Shield (from CP item): absorbs 3 instances of damage, recharges when eating
+      if (ctrl.items.includes('bulwark') && (ctrl as any).superShieldHP === undefined) {
+        (ctrl as any).superShieldHP = 3;
+      }
+      if (ctrl.items.includes('bulwark') && (ctrl as any).superShieldHP > 0) {
+        (ctrl as any).superShieldHP--;
+        return;
+      }
+
       // Otherwise lose energy
       ctrl.energy = Math.max(0, ctrl.energy - damage);
       this.eventBus.emit(GameEvents.ENERGY_CHANGED, { playerId: player.id, energy: ctrl.energy });
-      this.eventBus.emit(GameEvents.SCREEN_SHAKE, { intensity: CONFIG.SHAKE_INTENSITY_EAT * 2 });
+
+      // Hit-stop (Juice)
+      this.loop.setTimeScale(0.05); // Freeze frame
+      setTimeout(() => {
+        if (this.gameState === GameState.Playing) {
+          this.loop.setTimeScale(1.0);
+        }
+      }, 60);
+
+      this.eventBus.emit(GameEvents.SCREEN_SHAKE, { intensity: CONFIG.SHAKE_INTENSITY_EAT * 3 }); // Increased shake
     });
 
     // ── Active ability effects ───────────────────────────────
@@ -351,12 +400,18 @@ export class Game {
 
       switch (abilityId) {
         case 'dash': {
-          // Burst in the direction the player is facing
           if (physics && transform) {
-            const angle = transform.rotation;
-            physics.velocity = physics.velocity.add(
-              new Vec2(Math.cos(angle), Math.sin(angle)).mul(900),
-            );
+            // Dash in the direction of current movement, fallback to facing direction if still
+            let dashDir: Vec2;
+            if (physics.velocity.magSq() > 10) {
+              dashDir = physics.velocity.normalize();
+            } else {
+              const angle = transform.rotation;
+              dashDir = new Vec2(Math.cos(angle), Math.sin(angle));
+            }
+
+            // Increased force for a much further dash (from 1800 to 2000)
+            physics.velocity = physics.velocity.add(dashDir.mul(800));
           }
           break;
         }
@@ -410,7 +465,6 @@ export class Game {
     const firstTier = this.tierManager.getCurrentTier();
     this.tierManager.startFirstTier();
     this.background.setConfig(firstTier.background);
-    this.evolutionSystem.setThreshold(firstTier.evolutionThreshold);
     this.hud.setTier(firstTier.displayName, firstTier.displayColor);
     this.updateHudThreshold();
 
@@ -456,6 +510,8 @@ export class Game {
     // Menu state — only update menu UI
     if (this.gameState === GameState.Menu) {
       this.menuScreen.update(dt);
+      this.guideScreen.update(dt);
+      this.background.update(dt);
       return;
     }
 
@@ -472,6 +528,12 @@ export class Game {
     if (this.gameState === GameState.Upgrading) {
       this.dealScreen.update(dt);
       this.upgradeScreen.update(dt);
+      return;
+    }
+
+    // Shopping state (Tab menu)
+    if (this.gameState === GameState.Shopping) {
+      this.itemShopScreen.update(dt);
       return;
     }
 
@@ -500,6 +562,7 @@ export class Game {
     if (!isEvolving) {
       this.energySystem.update(this.world, dt);
       this.evolutionSystem.update(this.world, dt);
+      this.applyUniqueItemEffects(dt);
     }
 
     this.tierManager.update(dt);
@@ -518,6 +581,7 @@ export class Game {
     // Menu screen
     if (this.gameState === GameState.Menu) {
       this.menuScreen.render(ctx, w, h);
+      this.guideScreen.render(ctx, w, h);
       return;
     }
 
@@ -558,6 +622,11 @@ export class Game {
       this.upgradeScreen.render(ctx, w, h);
     }
 
+    // Item Shop (Tab menu)
+    if (this.itemShopScreen.isVisible()) {
+      this.itemShopScreen.render(ctx, w, h);
+    }
+
     // Death / win screens
     if (this.gameState === GameState.Dead) {
       this.deathScreen.render(ctx, w, h);
@@ -576,7 +645,7 @@ export class Game {
     ctx.fillStyle = 'rgba(150,150,150,0.5)';
     ctx.textAlign = 'left';
     const tips = this.debugMode
-      ? 'WASD: move | Mouse: aim | SPC: ability | N: next tier | G: god mode | M: +50 mass'
+      ? 'WASD: move | Mouse: aim | SPC: ability | N: skip | G: god | M: +mass | B: dash | C: +CP | T: restart'
       : hasAbility
         ? 'WASD: move | Mouse: aim | SPC: ability'
         : 'WASD: move | Mouse: aim';
@@ -587,18 +656,44 @@ export class Game {
     const w = this.renderer.width;
     const h = this.renderer.height;
 
+    if (this.guideScreen.isVisible()) {
+      if (this.guideScreen.handleClick(x, y)) return;
+      return; // block other clicks while guide is open
+    }
+
     if (this.gameState === GameState.Menu) {
       const result = this.menuScreen.handleClick(x, y, w, h);
       if (result) {
-        this.debugMode = result.debug;
-        this.debugOverlay.setEnabled(this.debugMode);
-        this.menuScreen.hide();
-        this.registerEvents();
-        this.startGame();
+        if (result.guide) {
+          this.menuScreen.hide();
+          this.guideScreen.show(() => {
+            this.guideScreen.hide();
+            this.menuScreen.show();
+          });
+          return;
+        }
+
+        if (result.debug !== undefined) {
+          this.debugMode = result.debug;
+          this.menuScreen.hide();
+          this.startGame();
+        }
       }
       return;
     }
 
+    if (this.gameState === GameState.Shopping) {
+      if (this.itemShopScreen.handleClick(x, y)) {
+        if (!this.itemShopScreen.isVisible()) {
+          // Closed shop
+          this.gameState = GameState.Playing;
+          this.loop.setTimeScale(1);
+        }
+      }
+      return;
+    }
+
+    if (this.evolutionScreen.isVisible() && this.evolutionScreen.handleClick(x, y)) return;
     if (this.dealScreen.handleClick(x, y)) return;
     if (this.upgradeScreen.handleClick(x, y, w, h)) return;
     this.deathScreen.handleClick(x, y, w, h);
@@ -659,32 +754,143 @@ export class Game {
         }
         break;
       }
+      case 'b': {
+        // Toggle dash ability (debug)
+        const players = this.world.query('PlayerControlled');
+        if (players.length > 0) {
+          const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+          if (ctrl.activeAbility === 'dash') {
+            ctrl.activeAbility = null;
+          } else {
+            ctrl.activeAbility = 'dash';
+            ctrl.activeMaxCooldown = 2; // from RelicDefs dash cooldown
+            ctrl.activeCooldown = 0;
+          }
+        }
+        break;
+      }
+      case 't': {
+        this.restart();
+        break;
+      }
     }
   }
 
   private restart(): void {
     this.world.clear();
-    this.eventBus.clear();
+    // Do not clear the eventBus, otherwise one-time systems (like Consumption) lose their listeners completely
     this.gameState = GameState.Playing;
     this.loop.setTimeScale(1);
     this.deathScreen.hide();
     this.winScreen.hide();
     this.upgradeScreen.hide();
     this.dealScreen.hide();
+    this.itemShopScreen.hide();
     this.evolutionSystem.setEvolving(false);
     this.pendingMassBonus = 0;
 
     // Re-create tier manager with fresh world
     this.tierManager = new TierManager(this.world, this.eventBus);
 
-    this.registerEvents();
     this.startGame();
   }
 
-  /** Update HUD and EvolutionSystem with current tier's threshold */
   private updateHudThreshold(): void {
-    const tier = this.tierManager.getCurrentTier();
-    this.evolutionSystem.setThreshold(tier.evolutionThreshold);
-    this.hud.setEvolutionThreshold(tier.evolutionThreshold);
+    const players = this.world.query('PlayerControlled');
+    if (players.length > 0) {
+      const dynamicThreshold = this.evolutionSystem.getDynamicThreshold(players[0]);
+      this.hud.setEvolutionThreshold(dynamicThreshold);
+    } else {
+      const tier = this.tierManager.getCurrentTier();
+      this.hud.setEvolutionThreshold(tier.evolutionThreshold);
+    }
+  }
+
+  private toggleItemShop(): void {
+    if (this.gameState === GameState.Menu || this.gameState === GameState.Dead || this.gameState === GameState.Won || this.gameState === GameState.Evolving || this.gameState === GameState.Upgrading) {
+      return;
+    }
+
+    if (this.gameState === GameState.Shopping) {
+      this.itemShopScreen.hide();
+      this.gameState = GameState.Playing;
+      this.loop.setTimeScale(1);
+    } else if (this.gameState === GameState.Playing) {
+      const players = this.world.query('PlayerControlled');
+      if (players.length > 0) {
+        const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
+        this.gameState = GameState.Shopping;
+        this.loop.setTimeScale(1);
+        this.itemShopScreen.show(ctrl.cp, ctrl.items, (itemId, cost, consumed) => {
+          ctrl.cp -= cost;
+          for (const c of consumed) {
+            const idx = ctrl.items.indexOf(c);
+            if (idx !== -1) ctrl.items.splice(idx, 1);
+          }
+          ctrl.items.push(itemId);
+
+          // Re-evaluate physics stats locally if necessary
+          // Note: Full physics logic will be handled by RelicSystem or similar update loop.
+        });
+      }
+    }
+  }
+
+  // Timer for chain lightning
+  private lightningTimer = 0;
+
+  private applyUniqueItemEffects(dt: number): void {
+    const players = this.world.query('PlayerControlled', 'Transform', 'Physics');
+    if (players.length === 0) return;
+
+    const player = players[0];
+    const ctrl = player.getComponent<PlayerControlled>('PlayerControlled')!;
+    const transform = player.getComponent<Transform>('Transform')!;
+    const physics = player.getComponent<Physics>('Physics')!;
+
+    // cosmic_striders: fire_trail
+    if (ctrl.items.includes('cosmic_striders') && physics.velocity.magSq() > 500) {
+      // Use particle system to spawn hazardous fire trail entities occasionally
+      if (Math.random() < dt * 10) {
+        const fire = this.world.createEntity();
+        fire.addComponent(new Transform(transform.position.clone()));
+        const firePhys = new Physics(0, 0);
+        firePhys.velocity = new Vec2(Math.random() - 0.5, Math.random() - 0.5).mul(20);
+        fire.addComponent(firePhys);
+        fire.addComponent(new Renderable(15, '#ff5522', '#ff8800', 20, 0.8, 0, 'circle'));
+        // Add Hazard component so it damages enemies (and not player)
+        fire.addComponent(new Hazard(15, 5, 0));
+        // Needs a lifetime component or similar to die off
+        setTimeout(() => this.world.removeEntity(fire.id), 2000);
+      }
+    }
+
+    // storm_bringer: chain_lightning
+    if (ctrl.items.includes('storm_bringer')) {
+      this.lightningTimer += dt;
+      if (this.lightningTimer > 1.5) {
+        this.lightningTimer = 0;
+        this.fireChainLightning(transform.position, 150);
+      }
+    }
+  }
+
+  private fireChainLightning(startPos: Vec2, radius: number): void {
+    const enemies = this.world.query('Transform', 'Hazard');
+    for (const enemy of enemies) {
+      const et = enemy.getComponent<Transform>('Transform')!;
+      if (et.position.distSq(startPos) < radius * radius) {
+        // "Damage" the enemy - for hazards, we can just push them or destroy them.
+        const ep = enemy.getComponent<Physics>('Physics');
+        if (ep) {
+          ep.velocity = ep.velocity.add(et.position.sub(startPos).normalize().mul(300));
+        }
+        // Visual effect
+        this.particleSystem.spawnBurst(this.world, et.position, '#ccccff', 5, 12);
+        this.eventBus.emit(GameEvents.SCREEN_SHAKE, { intensity: 2 });
+        break; // Only strike one nearby for now
+      }
+    }
   }
 }
+

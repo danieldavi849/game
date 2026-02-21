@@ -33,6 +33,7 @@ export enum BehaviorType {
   Patrol = 'patrol',
   Orbit = 'orbit',
   ZipAcross = 'zipAcross',
+  Flock = 'flock',
 }
 
 /** Collision layers for filtering */
@@ -51,6 +52,7 @@ export enum GameState {
   Playing = 'playing',
   Evolving = 'evolving',
   Upgrading = 'upgrading',
+  Shopping = 'shopping',
   Dead = 'dead',
   Won = 'won',
   Paused = 'paused',

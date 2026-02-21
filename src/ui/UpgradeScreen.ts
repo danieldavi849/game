@@ -30,11 +30,17 @@ export class UpgradeScreen {
   private ownedRelicIds: string[] = [];
   private hoverIndex = -1;
   private fadeIn = 0;
-  private onSelect: ((relic: RelicDef | null) => void) | null = null;
+  private onSelect: ((relic: RelicDef | null, replacedId?: string) => void) | null = null;
   private buttonRects: Array<{ x: number; y: number; w: number; h: number }> = [];
   private skipRect = { x: 0, y: 0, w: 0, h: 0 };
 
-  show(cp: number, ownedIds: string[], onSelect: (relic: RelicDef | null) => void): void {
+  // Replace Mode state
+  private replaceMode = false;
+  private selectedNewRelic: RelicDef | null = null;
+  private replaceHoverIndex = -1;
+  private replaceRects: Array<{ x: number; y: number; w: number; h: number }> = [];
+
+  show(cp: number, ownedIds: string[], onSelect: (relic: RelicDef | null, replacedId?: string) => void): void {
     this.visible = true;
     this.playerCp = cp;
     this.ownedRelicIds = ownedIds;
@@ -42,6 +48,8 @@ export class UpgradeScreen {
     this.onSelect = onSelect;
     this.fadeIn = 0;
     this.hoverIndex = -1;
+    this.replaceMode = false;
+    this.selectedNewRelic = null;
   }
 
   hide(): void { this.visible = false; this.onSelect = null; }
@@ -55,13 +63,42 @@ export class UpgradeScreen {
   handleClick(x: number, y: number, _w: number, _h: number): boolean {
     if (!this.visible || this.fadeIn < 0.8) return false;
 
+    // Handle replace mode clicks
+    if (this.replaceMode) {
+      for (let i = 0; i < this.replaceRects.length; i++) {
+        const r = this.replaceRects[i];
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          const replacedId = this.ownedRelicIds[i];
+          this.onSelect?.(this.selectedNewRelic, replacedId);
+          this.hide();
+          return true;
+        }
+      }
+      // Cancel replace
+      const cr = this.skipRect; // Reuse skip rect for cancel
+      if (x >= cr.x && x <= cr.x + cr.w && y >= cr.y && y <= cr.y + cr.h) {
+        this.replaceMode = false;
+        this.selectedNewRelic = null;
+        return true;
+      }
+      return false;
+    }
+
+    // Normal shop clicks
     for (let i = 0; i < this.buttonRects.length; i++) {
       const r = this.buttonRects[i];
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
         const chosen = this.choices[i];
         if (chosen && this.playerCp >= chosen.cost) {
-          this.onSelect?.(chosen);
-          this.hide();
+          if (this.ownedRelicIds.length >= 5 && !chosen.grantsActive) {
+            // Enter replace mode for Mutations
+            this.replaceMode = true;
+            this.selectedNewRelic = chosen;
+          } else {
+            // Normal buy
+            this.onSelect?.(chosen);
+            this.hide();
+          }
           return true;
         }
       }
@@ -78,11 +115,23 @@ export class UpgradeScreen {
   handleMouseMove(x: number, y: number): void {
     if (!this.visible) return;
     this.hoverIndex = -1;
-    for (let i = 0; i < this.buttonRects.length; i++) {
-      const r = this.buttonRects[i];
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-        this.hoverIndex = i;
-        break;
+    this.replaceHoverIndex = -1;
+
+    if (this.replaceMode) {
+      for (let i = 0; i < this.replaceRects.length; i++) {
+        const r = this.replaceRects[i];
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          this.replaceHoverIndex = i;
+          break;
+        }
+      }
+    } else {
+      for (let i = 0; i < this.buttonRects.length; i++) {
+        const r = this.buttonRects[i];
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          this.hoverIndex = i;
+          break;
+        }
       }
     }
   }
@@ -114,7 +163,7 @@ export class UpgradeScreen {
     ctx.font = '11px monospace';
     ctx.fillStyle = '#888888';
     ctx.fillText(
-      `Relics owned: ${this.ownedRelicIds.length}`,
+      `Mutations maxed: ${this.ownedRelicIds.length} / 5`,
       screenWidth / 2,
       screenHeight * 0.23,
     );
@@ -122,6 +171,83 @@ export class UpgradeScreen {
     const cardW = 190;
     const cardH = 200;
     const gap = 20;
+
+    // --- REPLACE MODE RENDER ---
+    if (this.replaceMode && this.selectedNewRelic) {
+      ctx.font = 'bold 24px monospace';
+      ctx.fillStyle = '#ff4444';
+      ctx.fillText('MUTATIONS FULL!', screenWidth / 2, screenHeight * 0.29);
+      ctx.font = '16px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(`Select a mutation to replace with [${this.selectedNewRelic.name}]`, screenWidth / 2, screenHeight * 0.33);
+
+      const rCardW = 140;
+      const rCardH = 160;
+      const rGap = 15;
+      const rTotalW = this.ownedRelicIds.length * rCardW + (this.ownedRelicIds.length - 1) * rGap;
+      const rStartX = (screenWidth - rTotalW) / 2;
+      const rCardY = screenHeight * 0.4;
+
+      this.replaceRects.length = 0;
+
+      for (let i = 0; i < this.ownedRelicIds.length; i++) {
+        const rId = this.ownedRelicIds[i];
+        // Dynamic import workaround for rendering defs (in real code we'd import getRelicById)
+        // Since we don't have getRelicById imported at top of UpgradeScreen in this snippet, 
+        // we'll rely on ALL_RELICS from top import
+        const relic = ALL_RELICS.find(x => x.id === rId);
+        if (!relic) continue;
+
+        const cx = rStartX + i * (rCardW + rGap);
+        const isHover = this.replaceHoverIndex === i;
+        this.replaceRects.push({ x: cx, y: rCardY, w: rCardW, h: rCardH });
+
+        const rarityColor = RARITY_COLORS[relic.rarity];
+
+        ctx.fillStyle = isHover ? 'rgba(75,55,55,0.97)' : RARITY_BG[relic.rarity];
+        ctx.strokeStyle = isHover ? '#ff4444' : '#333333';
+        ctx.lineWidth = isHover ? 3 : 1.5;
+        ctx.beginPath();
+        ctx.roundRect(cx, rCardY, rCardW, rCardH, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        const centerX = cx + rCardW / 2;
+        ctx.font = 'bold 12px monospace';
+        ctx.fillStyle = rarityColor;
+        ctx.textAlign = 'center';
+        ctx.fillText(relic.name, centerX, rCardY + 25);
+
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#aaaaaa';
+        ctx.fillText('Click to replace', centerX, rCardY + rCardH - 15);
+      }
+
+      // Cancel Replace button
+      const sW = 160;
+      const sH = 40;
+      const sX = (screenWidth - sW) / 2;
+      const sY = screenHeight * 0.85;
+      this.skipRect = { x: sX, y: sY, w: sW, h: sH };
+
+      const sHover = this.hoverIndex === -1 && !this.replaceMode; // fallback hover logic
+      ctx.fillStyle = 'rgba(20,20,30,0.8)';
+      ctx.strokeStyle = '#888888';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(sX, sY, sW, sH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = 'bold 14px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('CANCEL', screenWidth / 2, sY + 24);
+
+      ctx.restore();
+      return;
+    }
+
+    // --- NORMAL SHOP RENDER ---
     const totalW = this.choices.length * cardW + (this.choices.length - 1) * gap;
     const startX = (screenWidth - totalW) / 2;
     const cardY = screenHeight * 0.27;

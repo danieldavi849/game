@@ -7,17 +7,18 @@ import { Transform } from '../components/Transform.ts';
 import { Physics } from '../components/Physics.ts';
 import { PlayerControlled } from '../components/PlayerControlled.ts';
 import { GameEvents } from '../types/index.ts';
+import { Vec2 } from '../utils/Vec2.ts';
 
 /** Reads InputManager and applies movement to PlayerControlled entities */
 export class InputSystem implements System {
   readonly priority = 0;
-  private spaceWasDown = false;
+  private dashButtonWasDown = false;
 
   constructor(
     private input: InputManager,
     private camera: Camera,
     private eventBus: EventBus,
-  ) {}
+  ) { }
 
   update(world: World, dt: number): void {
     const players = world.query('PlayerControlled', 'Transform', 'Physics');
@@ -29,8 +30,20 @@ export class InputSystem implements System {
     const player = entity.getComponent<PlayerControlled>('PlayerControlled')!;
 
     // Movement from WASD
-    const moveDir = this.input.getMovementVector();
-    physics.acceleration = moveDir.mul(player.speed * player.relicSpeedMult * 5);
+    let moveDir = this.input.getMovementVector();
+
+    // If dashing, override moveDir to be the dash direction and ignore WASD
+    if (player.dashTimer > 0) {
+      if (physics.velocity.magSq() > 0.1) {
+        moveDir = physics.velocity.normalize();
+      } else {
+        const angle = transform.rotation;
+        moveDir = new Vec2(Math.cos(angle), Math.sin(angle));
+      }
+      physics.acceleration = moveDir.mul(player.speed * player.relicSpeedMult * 15);
+    } else {
+      physics.acceleration = moveDir.mul(player.speed * player.relicSpeedMult * 5);
+    }
 
     // Face toward mouse cursor
     const mouseScreen = this.input.getMousePosition();
@@ -40,19 +53,31 @@ export class InputSystem implements System {
       transform.rotation = toMouse.angle();
     }
 
-    // Spacebar → fire active ability (detect just-pressed)
-    const spaceDown = this.input.isKeyDown(' ');
-    if (spaceDown && !this.spaceWasDown) {
+    // Spacebar/Shift → fire active ability or dash
+    const dashButtonDown = this.input.isKeyDown(' ') || this.input.isKeyDown('Shift');
+
+    if (dashButtonDown && !this.dashButtonWasDown) {
       if (player.activeAbility && player.activeCooldown <= 0) {
         this.eventBus.emit(GameEvents.ACTIVE_ABILITY_USED, {
           playerId: entity.id,
           abilityId: player.activeAbility,
         });
         player.activeCooldown = player.activeMaxCooldown;
+      } else if (!player.activeAbility && player.dashCooldown <= 0 && player.dashTimer <= 0) {
+        // Universal Dash
+        player.dashTimer = 0.15; // 150ms of dash
+        player.dashCooldown = 2.0; // 2s cooldown
+
+        // Grant i-frames
+        player.invincibilityTimer = Math.max(player.invincibilityTimer, 0.25);
+
+        this.eventBus.emit(GameEvents.SCREEN_SHAKE, { intensity: 3 });
       }
     }
-    this.spaceWasDown = spaceDown;
+    this.dashButtonWasDown = dashButtonDown;
 
-    void dt;
+    // Update timers
+    if (player.dashTimer > 0) player.dashTimer = Math.max(0, player.dashTimer - dt);
+    if (player.dashCooldown > 0) player.dashCooldown = Math.max(0, player.dashCooldown - dt);
   }
 }

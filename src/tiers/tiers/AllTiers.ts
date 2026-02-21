@@ -81,7 +81,7 @@ class ElectronShieldMechanic implements TierMechanic {
     this.regenTimer = 0;
   }
 
-  deactivate(): void {}
+  deactivate(): void { }
 
   update(dt: number, world: World): void {
     this.regenTimer += dt;
@@ -256,7 +256,7 @@ export class SubatomicTier implements TierDefinition {
       for (let i = 0; i < cfg.count; i++) spawnHazardEntity(world, cfg);
   }
 
-  onExit(_world: World): void {}
+  onExit(_world: World): void { }
 }
 
 /** ─── ATOMIC TIER ─── */
@@ -346,7 +346,7 @@ export class AtomicTier implements TierDefinition {
       for (let i = 0; i < cfg.count; i++) spawnHazardEntity(world, cfg);
   }
 
-  onExit(_world: World): void {}
+  onExit(_world: World): void { }
 }
 
 /** ─── MOLECULAR TIER ─── */
@@ -380,7 +380,7 @@ export class MolecularTier implements TierDefinition {
       count: 55,
       minRadius: 8, maxRadius: 13,
       color: '#55ee88', glowColor: '#55ee88',
-      behavior: BehaviorType.Wander,
+      behavior: BehaviorType.Flock, // Now they school together!
       speed: 60,
       massValue: 9, energyValue: 20, cpValue: 1,
       collisionLayer: CollisionLayer.Food, respawn: true,
@@ -416,7 +416,7 @@ export class MolecularTier implements TierDefinition {
       for (let i = 0; i < cfg.count; i++) spawnFoodEntity(world, cfg);
   }
 
-  onExit(_world: World): void {}
+  onExit(_world: World): void { }
 }
 
 /** ─── Shared spawn helpers ─── */

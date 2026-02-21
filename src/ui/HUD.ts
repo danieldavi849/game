@@ -49,7 +49,7 @@ export class HUD {
     const physics = players[0].getComponent<Physics>('Physics');
 
     // Tier indicator
-    this.tierIndicator.render(ctx);
+    this.tierIndicator.render(ctx, ctrl.level);
 
     // Evolution progress bar
     this.evolutionBar.render(ctx, ctrl.evolutionMass, this.evolutionThreshold);

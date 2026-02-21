@@ -47,7 +47,7 @@ export class DebugOverlay {
     const panelX = screenWidth - 220;
     const panelY = 8;
     const panelW = 210;
-    const panelH = this.godMode ? 195 : 180;
+    const panelH = this.godMode ? 210 : 195;
 
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.beginPath();
@@ -94,6 +94,7 @@ export class DebugOverlay {
       if (physics) {
         drawLine('Velocity:', `${Math.floor(physics.velocity.mag())}`);
       }
+      drawLine('Dash:', ctrl.activeAbility === 'dash' ? 'YES' : 'NO', ctrl.activeAbility === 'dash' ? '#44ddff' : '#666666');
     }
 
     if (this.godMode) {

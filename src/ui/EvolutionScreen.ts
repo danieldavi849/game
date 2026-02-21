@@ -10,9 +10,9 @@ export class EvolutionScreen {
   private fromName: string = '';
   private onComplete: (() => void) | null = null;
 
-  private readonly PHASE_IN = 0.6;
-  private readonly PHASE_HOLD = 1.2;
-  private readonly PHASE_OUT = 0.7;
+  private readonly PHASE_IN = 0.2;
+  private readonly PHASE_HOLD = 0.4;
+  private readonly PHASE_OUT = 0.3;
 
   /** Start evolution transition */
   show(fromName: string, toName: string, color: string, onComplete: () => void): void {
@@ -34,6 +34,19 @@ export class EvolutionScreen {
   forceHide(): void {
     this.visible = false;
     this.onComplete = null;
+  }
+
+  /** Handle click to skip */
+  handleClick(x: number, y: number): boolean {
+    if (!this.visible) return false;
+    if (this.phase === 'in' || this.phase === 'hold') {
+      this.phase = 'out';
+      this.timer = 0;
+      this.onComplete?.();
+    } else if (this.phase === 'out') {
+      this.timer = this.PHASE_OUT;
+    }
+    return true;
   }
 
   /** Update animation */

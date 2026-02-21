@@ -3,6 +3,8 @@ import { Component } from '../ecs/Component.ts';
 /** Marker component for the player entity */
 export class PlayerControlled implements Component {
   readonly type = 'PlayerControlled';
+  /** Current player level (advances phase every 10 levels) */
+  level: number = 1;
   /** Current evolution mass accumulated */
   evolutionMass: number = 0;
   /** Current energy level */
@@ -17,7 +19,9 @@ export class PlayerControlled implements Component {
   maxShieldHP: number = 0;
 
   // --- Relic system ---
-  relics: string[] = [];
+  mutations: string[] = []; // Max 5 constraints handled by UI/Shop
+  catalysts: string[] = []; // Max 3 single-use items
+  items: string[] = [];
   transformations: string[] = [];
 
   // Computed stat modifiers (recalculated by RelicSystem)
@@ -39,7 +43,11 @@ export class PlayerControlled implements Component {
   /** Permanent max-energy reduction from devil deals */
   devilEnergyPenalty: number = 0;
 
-  // Active ability
+  // Baseline Dodge/Dash
+  dashTimer: number = 0;
+  dashCooldown: number = 0;
+
+  // Active ability (Overrides dash if set)
   activeAbility: string | null = null;
   activeCooldown: number = 0;
   activeMaxCooldown: number = 0;

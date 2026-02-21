@@ -11,6 +11,7 @@ export class MenuScreen {
 
   // Button rects for hit testing
   private startRect = { x: 0, y: 0, w: 0, h: 0 };
+  private guideRect = { x: 0, y: 0, w: 0, h: 0 };
   private debugRect = { x: 0, y: 0, w: 0, h: 0 };
 
   show(): void {
@@ -63,14 +64,19 @@ export class MenuScreen {
     if (!this.visible) return;
     this.hoverIndex = -1;
     if (this.hitTest(x, y, this.startRect)) this.hoverIndex = 0;
-    if (this.hitTest(x, y, this.debugRect)) this.hoverIndex = 1;
+    if (this.hitTest(x, y, this.guideRect)) this.hoverIndex = 1;
+    if (this.hitTest(x, y, this.debugRect)) this.hoverIndex = 2;
   }
 
-  handleClick(x: number, y: number, _w: number, _h: number): { debug: boolean } | null {
+  handleClick(x: number, y: number, _w: number, _h: number): { debug?: boolean, guide?: boolean } | null {
     if (!this.visible || this.fadeIn < 0.5) return null;
 
     if (this.hitTest(x, y, this.startRect)) {
       return { debug: this.debugEnabled };
+    }
+
+    if (this.hitTest(x, y, this.guideRect)) {
+      return { guide: true };
     }
 
     if (this.hitTest(x, y, this.debugRect)) {
@@ -149,14 +155,36 @@ export class MenuScreen {
     ctx.fillStyle = '#ffffff';
     ctx.fillText('START GAME', screenWidth / 2, startY + 36);
 
+    // Guide/Glossary button
+    const gBtnW = 240;
+    const gBtnH = 44;
+    const gBtnX = (screenWidth - gBtnW) / 2;
+    const gBtnY = startY + btnH + 15;
+    this.guideRect = { x: gBtnX, y: gBtnY, w: gBtnW, h: gBtnH };
+
+    const gHover = this.hoverIndex === 1;
+    ctx.fillStyle = gHover ? 'rgba(68, 255, 170, 0.25)' : 'rgba(68, 255, 170, 0.1)';
+    ctx.beginPath();
+    ctx.roundRect(gBtnX, gBtnY, gBtnW, gBtnH, 8);
+    ctx.fill();
+    ctx.strokeStyle = gHover ? '#44ffaa' : '#228855';
+    ctx.lineWidth = gHover ? 2 : 1.5;
+    ctx.beginPath();
+    ctx.roundRect(gBtnX, gBtnY, gBtnW, gBtnH, 8);
+    ctx.stroke();
+
+    ctx.font = 'bold 16px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('GLOSSARY / GUIDE', screenWidth / 2, gBtnY + 28);
+
     // Debug mode toggle
     const dbgW = 240;
     const dbgH = 44;
     const dbgX = (screenWidth - dbgW) / 2;
-    const dbgY = startY + btnH + 20;
+    const dbgY = gBtnY + gBtnH + 15;
     this.debugRect = { x: dbgX, y: dbgY, w: dbgW, h: dbgH };
 
-    const dbgHover = this.hoverIndex === 1;
+    const dbgHover = this.hoverIndex === 2;
     ctx.fillStyle = this.debugEnabled
       ? 'rgba(255,180,50,0.2)'
       : dbgHover ? 'rgba(100,100,100,0.15)' : 'rgba(50,50,50,0.1)';

@@ -9,6 +9,7 @@ import {
   getRelicById, getTransformationForTag,
   SynergyTag, RelicStatMods, TRANSFORMATIONS,
 } from '../relics/RelicDefs.ts';
+import { getItemById } from '../items/ItemDefs.ts';
 
 /** Recomputes relic stat modifiers and applies per-frame effects */
 export class RelicSystem implements System {
@@ -24,9 +25,15 @@ export class RelicSystem implements System {
       this.resetMods(ctrl);
 
       // Accumulate relic stat mods
-      for (const relicId of ctrl.relics) {
+      for (const relicId of ctrl.mutations) {
         const relic = getRelicById(relicId);
         if (relic) this.applyMods(ctrl, relic.stats);
+      }
+
+      // Accumulate CP item stat mods
+      for (const itemId of ctrl.items) {
+        const item = getItemById(itemId);
+        if (item && item.stats) this.applyMods(ctrl, item.stats);
       }
 
       // Check for new transformations
@@ -95,7 +102,7 @@ export class RelicSystem implements System {
   private checkTransformations(ctrl: PlayerControlled): void {
     // Count tags across all relics
     const tagCounts = new Map<SynergyTag, number>();
-    for (const relicId of ctrl.relics) {
+    for (const relicId of ctrl.mutations) {
       const relic = getRelicById(relicId);
       if (!relic) continue;
       for (const tag of relic.tags) {

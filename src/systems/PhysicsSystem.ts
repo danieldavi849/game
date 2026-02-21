@@ -2,6 +2,7 @@ import { System } from '../ecs/System.ts';
 import { World } from '../ecs/World.ts';
 import { Transform } from '../components/Transform.ts';
 import { Physics } from '../components/Physics.ts';
+import { PlayerControlled } from '../components/PlayerControlled.ts';
 import { CONFIG } from '../utils/Constants.ts';
 
 /** Integrates velocity, applies friction, clamps to world boundaries */
@@ -15,13 +16,21 @@ export class PhysicsSystem implements System {
       const transform = entity.getComponent<Transform>('Transform')!;
       const physics = entity.getComponent<Physics>('Physics')!;
 
-      // Apply acceleration
-      physics.velocity.addMut(physics.acceleration.mul(dt));
+      const playerCtrl = entity.getComponent<PlayerControlled>('PlayerControlled');
+      const maxSpeed = playerCtrl ? physics.maxSpeed * playerCtrl.relicSpeedMult : physics.maxSpeed;
 
-      // Clamp speed
-      const speed = physics.velocity.mag();
-      if (speed > physics.maxSpeed) {
-        physics.velocity = physics.velocity.normalize().mul(physics.maxSpeed);
+      // Apply acceleration
+      if (physics.acceleration.magSq() > 0) {
+        const velAfterAcc = physics.velocity.add(physics.acceleration.mul(dt));
+        const speedAfterAcc = velAfterAcc.mag();
+
+        // If we're already over maxSpeed, only allow accelerating if it slows us down
+        if (speedAfterAcc > maxSpeed && speedAfterAcc > physics.velocity.mag()) {
+          // Keep current speed but allow direction change from acceleration? 
+          // Simple approach: just don't add acceleration if it pushes us further over the limit
+        } else {
+          physics.velocity = velAfterAcc;
+        }
       }
 
       // Apply friction

@@ -15,12 +15,12 @@ export class RelicHUD {
     const players = world.query('PlayerControlled');
     if (players.length === 0) { this.tooltipIndex = -1; return; }
     const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
-    if (ctrl.relics.length === 0) { this.tooltipIndex = -1; return; }
+    if (ctrl.mutations.length === 0) { this.tooltipIndex = -1; return; }
 
     const stripY = screenHeight - 50;
-    const stripStartX = this.getStripStartX(screenWidth, ctrl.relics.length);
+    const stripStartX = this.getStripStartX(screenWidth, 5); // 5 max slots
     this.tooltipIndex = -1;
-    for (let i = 0; i < ctrl.relics.length; i++) {
+    for (let i = 0; i < ctrl.mutations.length; i++) {
       const ix = stripStartX + i * (ICON_SIZE + ICON_GAP);
       if (x >= ix && x <= ix + ICON_SIZE && y >= stripY && y <= stripY + ICON_SIZE) {
         this.tooltipIndex = i;
@@ -35,6 +35,7 @@ export class RelicHUD {
     const ctrl = players[0].getComponent<PlayerControlled>('PlayerControlled')!;
 
     this.renderRelicStrip(ctx, ctrl, screenWidth, screenHeight);
+    this.renderCatalystStrip(ctx, ctrl, screenWidth, screenHeight);
     this.renderActiveAbility(ctx, ctrl, screenWidth, screenHeight);
     this.renderTransformationBadges(ctx, ctrl, screenHeight);
     this.renderTooltip(ctx, ctrl, screenWidth, screenHeight);
@@ -46,33 +47,92 @@ export class RelicHUD {
   }
 
   private renderRelicStrip(ctx: CanvasRenderingContext2D, ctrl: PlayerControlled, screenWidth: number, screenHeight: number): void {
-    if (ctrl.relics.length === 0) return;
-
+    const maxSlots = 5;
     const stripY = screenHeight - 50;
-    const startX = this.getStripStartX(screenWidth, ctrl.relics.length);
+    const startX = this.getStripStartX(screenWidth, maxSlots);
 
-    for (let i = 0; i < ctrl.relics.length; i++) {
-      const relic = getRelicById(ctrl.relics[i]);
-      if (!relic) continue;
+    for (let i = 0; i < maxSlots; i++) {
       const ix = startX + i * (ICON_SIZE + ICON_GAP);
-      const rarityColor = RARITY_COLORS[relic.rarity];
 
-      // Icon bg
-      ctx.fillStyle = 'rgba(10,10,18,0.85)';
-      ctx.strokeStyle = rarityColor;
-      ctx.lineWidth = this.tooltipIndex === i ? 2.5 : 1;
-      ctx.beginPath();
-      ctx.roundRect(ix, stripY, ICON_SIZE, ICON_SIZE, 4);
-      ctx.fill();
-      ctx.stroke();
+      if (i < ctrl.mutations.length) {
+        // Draw owned mutation
+        const relic = getRelicById(ctrl.mutations[i]);
+        if (!relic) continue;
+        const rarityColor = RARITY_COLORS[relic.rarity];
 
-      // Relic initial letter
-      ctx.font = 'bold 12px monospace';
-      ctx.fillStyle = rarityColor;
+        ctx.fillStyle = 'rgba(10,10,18,0.85)';
+        ctx.strokeStyle = rarityColor;
+        ctx.lineWidth = this.tooltipIndex === i ? 2.5 : 1;
+        ctx.beginPath();
+        ctx.roundRect(ix, stripY, ICON_SIZE, ICON_SIZE, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = 'bold 12px monospace';
+        ctx.fillStyle = rarityColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(relic.name[0].toUpperCase(), ix + ICON_SIZE / 2, stripY + ICON_SIZE / 2);
+        ctx.textBaseline = 'alphabetic';
+      } else {
+        // Draw empty slot
+        ctx.fillStyle = 'rgba(10,10,18,0.3)';
+        ctx.strokeStyle = 'rgba(80,80,100,0.3)';
+        ctx.setLineDash([2, 2]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(ix, stripY, ICON_SIZE, ICON_SIZE, 4);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset
+      }
+    }
+  }
+
+  private renderCatalystStrip(ctx: CanvasRenderingContext2D, ctrl: PlayerControlled, screenWidth: number, screenHeight: number): void {
+    const maxSlots = 3;
+    const stripY = screenHeight - 65;
+    const totalW = maxSlots * (ICON_SIZE + ICON_GAP) - ICON_GAP;
+    // Align to bottom right
+    const startX = screenWidth - totalW - 16;
+
+    for (let i = 0; i < maxSlots; i++) {
+      const ix = startX + i * (ICON_SIZE + ICON_GAP);
+
+      if (i < ctrl.catalysts.length) {
+        // Draw owned catalyst (Currently just a placeholder color until we build the items system)
+        ctx.fillStyle = 'rgba(40,15,10,0.85)';
+        ctx.strokeStyle = '#ff8844';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(ix, stripY, ICON_SIZE, ICON_SIZE, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = 'bold 12px monospace';
+        ctx.fillStyle = '#ff8844';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('C', ix + ICON_SIZE / 2, stripY + ICON_SIZE / 2);
+        ctx.textBaseline = 'alphabetic';
+      } else {
+        // Draw empty slot
+        ctx.fillStyle = 'rgba(20,10,5,0.3)';
+        ctx.strokeStyle = 'rgba(100,60,40,0.3)';
+        ctx.setLineDash([2, 2]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(ix, stripY, ICON_SIZE, ICON_SIZE, 4);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset
+      }
+
+      // Draw hotkey number indicator [1], [2], [3] above the box
+      ctx.font = '10px monospace';
+      ctx.fillStyle = '#888888';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(relic.name[0].toUpperCase(), ix + ICON_SIZE / 2, stripY + ICON_SIZE / 2);
-      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(`[${i + 1}]`, ix + ICON_SIZE / 2, stripY - 6);
     }
   }
 
@@ -153,14 +213,14 @@ export class RelicHUD {
   }
 
   private renderTooltip(ctx: CanvasRenderingContext2D, ctrl: PlayerControlled, screenWidth: number, screenHeight: number): void {
-    if (this.tooltipIndex < 0 || this.tooltipIndex >= ctrl.relics.length) return;
-    const relic = getRelicById(ctrl.relics[this.tooltipIndex]);
+    if (this.tooltipIndex < 0 || this.tooltipIndex >= ctrl.mutations.length) return;
+    const relic = getRelicById(ctrl.mutations[this.tooltipIndex]);
     if (!relic) return;
 
     const ttW = 200;
     const ttH = 90;
     const stripY = screenHeight - 50;
-    const startX = this.getStripStartX(screenWidth, ctrl.relics.length);
+    const startX = this.getStripStartX(screenWidth, 5); // 5 max slots
     const iconX = startX + this.tooltipIndex * (ICON_SIZE + ICON_GAP);
     let ttX = iconX - ttW / 2 + ICON_SIZE / 2;
     ttX = Math.max(8, Math.min(screenWidth - ttW - 8, ttX));

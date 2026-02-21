@@ -13,13 +13,13 @@ export class TierIndicator {
   }
 
   /** Render the tier indicator */
-  render(ctx: CanvasRenderingContext2D): void {
+  render(ctx: CanvasRenderingContext2D, level: number = 1): void {
     const x = CONFIG.HUD_PADDING;
     const y = CONFIG.HUD_PADDING;
 
     // Tier badge
     ctx.font = 'bold 14px monospace';
-    const text = `[ ${this.tierName.toUpperCase()} ]`;
+    const text = `[ ${this.tierName.toUpperCase()} - LVL ${level} ]`;
     const metrics = ctx.measureText(text);
 
     ctx.fillStyle = 'rgba(0,0,0,0.5)';

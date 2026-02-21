@@ -3,7 +3,7 @@ export class Vec2 {
   constructor(
     public x: number = 0,
     public y: number = 0,
-  ) {}
+  ) { }
 
   /** Create a new Vec2 from another */
   static from(v: Vec2): Vec2 {
@@ -61,7 +61,17 @@ export class Vec2 {
   normalize(): Vec2 {
     const m = this.mag();
     if (m === 0) return new Vec2(0, 0);
-    return this.div(m);
+    return new Vec2(this.x / m, this.y / m);
+  }
+
+  /** Normalize (in-place) */
+  normalizeMut(): this {
+    const m = this.mag();
+    if (m !== 0) {
+      this.x /= m;
+      this.y /= m;
+    }
+    return this;
   }
 
   /** Distance to another vector */
@@ -113,17 +123,33 @@ export class Vec2 {
     this.y = v.y;
   }
 
-  /** Add in-place */
+  /** Add (in-place) */
   addMut(v: Vec2): this {
     this.x += v.x;
     this.y += v.y;
     return this;
   }
 
-  /** Multiply scalar in-place */
+  /** Subtract (in-place) */
+  subMut(v: Vec2): this {
+    this.x -= v.x;
+    this.y -= v.y;
+    return this;
+  }
+
+  /** Multiply (in-place) */
   mulMut(s: number): this {
     this.x *= s;
     this.y *= s;
+    return this;
+  }
+
+  /** Divide (in-place) */
+  divMut(s: number): this {
+    if (s !== 0) {
+      this.x /= s;
+      this.y /= s;
+    }
     return this;
   }
 
