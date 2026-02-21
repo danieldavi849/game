@@ -443,7 +443,7 @@ export function spawnFoodEntity(world: World, cfg: EntitySpawnConfig, nearX?: nu
   entity.addComponent(phys);
 
   const isZipper = cfg.behavior === BehaviorType.ZipAcross;
-  entity.addComponent(new Renderable(
+  const foodRenderable = new Renderable(
     radius,
     cfg.color,
     cfg.glowColor ?? '',
@@ -453,7 +453,10 @@ export function spawnFoodEntity(world: World, cfg: EntitySpawnConfig, nearX?: nu
     'circle',
     isZipper ? 0 : 2.5,
     isZipper ? 0 : radius * 0.08,
-  ));
+  );
+  // Assign sprite key so RenderSystem uses the PixelLab-generated sprite when available
+  foodRenderable.spriteKey = cfg.type;
+  entity.addComponent(foodRenderable);
 
   entity.addComponent(new Collider(radius, cfg.collisionLayer, false));
   entity.addComponent(new AIBehavior(cfg.behavior, cfg.speed, CONFIG.AI_PERCEPTION_RADIUS, CONFIG.AI_FLEE_DISTANCE));
@@ -471,7 +474,7 @@ export function spawnHazardEntity(world: World, cfg: HazardSpawnConfig): void {
   phys.friction = 0.96;
   entity.addComponent(phys);
 
-  entity.addComponent(new Renderable(
+  const hazardRenderable = new Renderable(
     cfg.radius,
     cfg.color,
     cfg.color,
@@ -481,7 +484,10 @@ export function spawnHazardEntity(world: World, cfg: HazardSpawnConfig): void {
     'circle',
     3.5,
     cfg.radius * 0.12,
-  ));
+  );
+  // Assign sprite key so RenderSystem uses the PixelLab-generated sprite when available
+  hazardRenderable.spriteKey = cfg.type;
+  entity.addComponent(hazardRenderable);
 
   entity.addComponent(new Collider(cfg.radius, cfg.collisionLayer, true));
   entity.addComponent(new AIBehavior(cfg.behavior, cfg.speed, CONFIG.AI_PERCEPTION_RADIUS * 1.5));

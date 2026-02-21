@@ -36,6 +36,7 @@ import { Vec2 } from './utils/Vec2.ts';
 import { RelicDef } from './relics/RelicDefs.ts';
 import { GameEvents, GameState, CollisionLayer, EntityType } from './types/index.ts';
 import { CONFIG } from './utils/Constants.ts';
+import { preloadSprites } from './rendering/SpriteManager.ts';
 
 /** Top-level game class: owns loop, state, systems, and coordinates everything */
 export class Game {
@@ -86,6 +87,10 @@ export class Game {
 
   async init(): Promise<void> {
     await this.renderer.init();
+
+    // Preload PixelLab-generated pixel-art sprites (non-blocking — falls back to
+    // vector graphics for any sprites that haven't been generated yet)
+    preloadSprites();
 
     this.eventBus = new EventBus();
     this.camera = new Camera();
@@ -428,7 +433,7 @@ export class Game {
     phys.friction = 0.88;
     player.addComponent(phys);
 
-    player.addComponent(new Renderable(
+    const playerRenderable = new Renderable(
       cfg.baseRadius,
       cfg.color,
       cfg.glowColor,
@@ -436,7 +441,10 @@ export class Game {
       1,
       0,
       'circle',
-    ));
+    );
+    // Use tier-specific pixel-art sprite when available
+    playerRenderable.spriteKey = `player_${this.tierManager.getCurrentTier().id}`;
+    player.addComponent(playerRenderable);
 
     player.addComponent(new Collider(cfg.baseRadius, CollisionLayer.Player, false));
 
