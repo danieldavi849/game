@@ -5,6 +5,7 @@ import { Transform } from '../components/Transform.ts';
 import { Renderable } from '../components/Renderable.ts';
 import { PlayerControlled } from '../components/PlayerControlled.ts';
 import * as PIXI from 'pixi.js';
+import { getSprite } from '../rendering/SpriteManager.ts';
 
 /** Renders all Renderable entities using PIXI.js */
 export class RenderSystem implements System {
@@ -112,6 +113,52 @@ export class RenderSystem implements System {
     (container as any).entityId = entityId;
     r.graphics = container as any; // Renderable.graphics is currently typed as Graphics, but Container works (they share Transform)
 
+    // Use pixel-art sprite when one has been generated for this entity type
+    const texture = r.spriteKey ? getSprite(r.spriteKey) : null;
+    if (texture) {
+      this.createSpriteGraphics(container, r, isPlayer, texture);
+    } else {
+      this.createVectorGraphics(container, r, isPlayer);
+    }
+
+    // Ensure smaller entities render on top (PIXI requires sortableChildren = true on stage)
+    container.zIndex = 1000 - r.radius;
+  }
+
+  /** Render entity as a PixelLab-generated pixel-art sprite */
+  private createSpriteGraphics(
+    container: PIXI.Container,
+    r: Renderable,
+    isPlayer: boolean,
+    texture: PIXI.Texture,
+  ): void {
+    const sprite = new PIXI.Sprite(texture);
+    sprite.anchor.set(0.5, 0.5);
+    // Size sprite to match the entity's collision radius
+    const diameter = r.radius * 2;
+    sprite.width = diameter;
+    sprite.height = diameter;
+    container.addChild(sprite);
+
+    if (isPlayer) {
+      // Direction indicator rendered on top of the sprite
+      const indicator = new PIXI.Graphics();
+      indicator.circle(r.radius + 5, 0, 3);
+      indicator.fill({ color: 0xffffff });
+      container.addChild(indicator);
+
+      const shield = new PIXI.Graphics();
+      shield.label = 'shield';
+      container.addChild(shield);
+    }
+  }
+
+  /** Render entity using procedural vector graphics (fallback when no sprite) */
+  private createVectorGraphics(
+    container: PIXI.Container,
+    r: Renderable,
+    isPlayer: boolean,
+  ): void {
     const g = new PIXI.Graphics();
     container.addChild(g);
 
@@ -168,9 +215,5 @@ export class RenderSystem implements System {
       shield.label = 'shield';
       container.addChild(shield);
     }
-
-    // Ensure smaller entities render on top by using zIndex (PIXI requires sortableChildren = true on stage)
-    // We invert radius so smaller = higher zIndex
-    container.zIndex = 1000 - r.radius;
   }
 }

@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate-sprites": "node scripts/generate-sprites.mjs"
   },
   "devDependencies": {
+    "@pixellab-code/pixellab": "^1.0.2",
     "typescript": "^5.3.3",
     "vite": "^5.0.11"
   },
