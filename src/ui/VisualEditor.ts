@@ -17,6 +17,23 @@ export interface VisualTheme {
     glowRadius: number;
     baseRadius: number;
   };
+  /** Radius override per entity type (matches EntityType enum values) */
+  entities: {
+    // Subatomic
+    quark: number;
+    neutrino: number;
+    photon: number;
+    proton: number;
+    // Atomic
+    electron: number;
+    nobleGas: number;
+    ion: number;
+    radioactiveIsotope: number;
+    // Molecular
+    aminoAcid: number;
+    lipid: number;
+    freeRadical: number;
+  };
 }
 
 const STORAGE_KEY = 'ascension_visual_theme';
@@ -44,12 +61,25 @@ export const VISUAL_DEFAULTS: VisualTheme = {
     glowRadius: 38,
     baseRadius: 26,
   },
+  entities: {
+    quark: 6,
+    neutrino: 4,
+    photon: 6,
+    proton: 14,
+    electron: 7,
+    nobleGas: 12,
+    ion: 8,
+    radioactiveIsotope: 18,
+    aminoAcid: 10,
+    lipid: 15,
+    freeRadical: 8,
+  },
 };
 
 /**
  * In-game visual editor — an HTML overlay panel toggled with F2.
- * Lets you edit background colors, grid, HUD sizing/colors, and player visuals.
- * Changes are persisted to localStorage.
+ * Lets you edit background colors, grid, HUD sizing/colors, player visuals,
+ * and the radius of every entity type. Changes are persisted to localStorage.
  */
 export class VisualEditor {
   private visible = false;
@@ -64,6 +94,9 @@ export class VisualEditor {
   private panelX = 20;
   private panelY = 60;
 
+  // Save button ref for feedback animation
+  private saveBtn!: HTMLButtonElement;
+
   constructor(onApply: (theme: VisualTheme) => void) {
     this.onApply = onApply;
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -74,6 +107,7 @@ export class VisualEditor {
           background: { ...VISUAL_DEFAULTS.background, ...parsed.background },
           hud: { ...VISUAL_DEFAULTS.hud, ...parsed.hud },
           player: { ...VISUAL_DEFAULTS.player, ...parsed.player },
+          entities: { ...VISUAL_DEFAULTS.entities, ...parsed.entities },
         };
       } catch {
         this.theme = this.cloneDefaults();
@@ -158,10 +192,51 @@ export class VisualEditor {
       this.sliderRow('Base Radius', 'player.baseRadius', 4, 50, 1),
     ]));
 
+    content.appendChild(this.buildEntitySection());
+
     content.appendChild(this.buildFooter());
     this.panel.appendChild(content);
 
     document.body.appendChild(this.panel);
+  }
+
+  /**
+   * Builds the ENTITIES section with per-tier subsection labels and
+   * a radius slider for every entity type.
+   */
+  private buildEntitySection(): HTMLElement {
+    const rows: HTMLElement[] = [
+      this.tierLabel('— SUBATOMIC —'),
+      this.sliderRow('Quark', 'entities.quark', 1, 30, 1),
+      this.sliderRow('Neutrino', 'entities.neutrino', 1, 25, 1),
+      this.sliderRow('Photon', 'entities.photon', 1, 25, 1),
+      this.sliderRow('Proton (hazard)', 'entities.proton', 4, 40, 1),
+      this.tierLabel('— ATOMIC —'),
+      this.sliderRow('Electron', 'entities.electron', 1, 30, 1),
+      this.sliderRow('Noble Gas', 'entities.nobleGas', 2, 35, 1),
+      this.sliderRow('Ion', 'entities.ion', 1, 30, 1),
+      this.sliderRow('Radioactive (hazard)', 'entities.radioactiveIsotope', 4, 45, 1),
+      this.tierLabel('— MOLECULAR —'),
+      this.sliderRow('Amino Acid', 'entities.aminoAcid', 2, 35, 1),
+      this.sliderRow('Lipid', 'entities.lipid', 3, 45, 1),
+      this.sliderRow('Free Radical', 'entities.freeRadical', 1, 30, 1),
+    ];
+
+    return this.buildSection('ENTITIES  (radius)', rows);
+  }
+
+  /** Small divider label inside a section */
+  private tierLabel(text: string): HTMLElement {
+    const el = document.createElement('div');
+    Object.assign(el.style, {
+      color: '#6655aa',
+      fontSize: '9px',
+      letterSpacing: '1px',
+      textAlign: 'center',
+      paddingTop: '4px',
+    });
+    el.textContent = text;
+    return el;
   }
 
   private applyPanelStyles(el: HTMLDivElement): void {
@@ -207,11 +282,7 @@ export class VisualEditor {
 
     const hint = document.createElement('span');
     hint.textContent = 'F2';
-    Object.assign(hint.style, {
-      fontSize: '9px',
-      color: '#8866cc',
-      marginRight: '8px',
-    });
+    Object.assign(hint.style, { fontSize: '9px', color: '#8866cc', marginRight: '8px' });
 
     const closeBtn = document.createElement('span');
     closeBtn.textContent = '✕';
@@ -236,7 +307,6 @@ export class VisualEditor {
       header.style.cursor = 'grabbing';
       e.preventDefault();
     });
-
     document.addEventListener('mousemove', (e) => {
       if (!this.isDragging) return;
       this.panelX = e.clientX - this.dragOffsetX;
@@ -244,7 +314,6 @@ export class VisualEditor {
       this.panel.style.left = `${this.panelX}px`;
       this.panel.style.top = `${this.panelY}px`;
     });
-
     document.addEventListener('mouseup', () => {
       if (this.isDragging) {
         this.isDragging = false;
@@ -293,11 +362,23 @@ export class VisualEditor {
     const footer = document.createElement('div');
     Object.assign(footer.style, {
       display: 'flex',
+      flexDirection: 'column',
       gap: '6px',
       marginTop: '2px',
     });
 
-    const resetBtn = this.makeButton('↺ RESET DEFAULTS', '#ff6655');
+    // Primary SAVE button (full width, prominent)
+    this.saveBtn = this.makeButton('💾  SAVE', '#44ff88');
+    Object.assign(this.saveBtn.style, { padding: '7px', fontSize: '11px', letterSpacing: '2px' });
+    this.saveBtn.title = 'Save current settings to localStorage';
+    this.saveBtn.addEventListener('click', () => this.triggerSave());
+
+    // Secondary row
+    const secondRow = document.createElement('div');
+    secondRow.style.display = 'flex';
+    secondRow.style.gap = '6px';
+
+    const resetBtn = this.makeButton('↺ RESET', '#ff6655');
     resetBtn.title = 'Revert all values to defaults';
     resetBtn.addEventListener('click', () => {
       this.theme = this.cloneDefaults();
@@ -306,11 +387,10 @@ export class VisualEditor {
     });
 
     const copyBtn = this.makeButton('⎘ COPY JSON', '#44aaff');
-    copyBtn.title = 'Copy theme JSON to clipboard';
+    copyBtn.title = 'Copy theme JSON to clipboard (paste into VISUAL_DEFAULTS to make permanent)';
     copyBtn.addEventListener('click', () => {
       const json = JSON.stringify(this.theme, null, 2);
       navigator.clipboard.writeText(json).catch(() => {
-        // Fallback for environments without clipboard API
         const ta = document.createElement('textarea');
         ta.value = json;
         document.body.appendChild(ta);
@@ -318,11 +398,32 @@ export class VisualEditor {
         document.execCommand('copy');
         document.body.removeChild(ta);
       });
+      copyBtn.textContent = '✓ COPIED!';
+      setTimeout(() => { copyBtn.textContent = '⎘ COPY JSON'; }, 2000);
     });
 
-    footer.appendChild(resetBtn);
-    footer.appendChild(copyBtn);
+    secondRow.appendChild(resetBtn);
+    secondRow.appendChild(copyBtn);
+
+    footer.appendChild(this.saveBtn);
+    footer.appendChild(secondRow);
     return footer;
+  }
+
+  /** Explicit save with green flash feedback */
+  private triggerSave(): void {
+    this.save();
+    const original = this.saveBtn.textContent!;
+    this.saveBtn.textContent = '✓  SAVED!';
+    this.saveBtn.style.background = 'rgba(40,200,100,0.25)';
+    this.saveBtn.style.borderColor = '#88ffaa';
+    this.saveBtn.style.color = '#88ffaa';
+    setTimeout(() => {
+      this.saveBtn.textContent = original;
+      this.saveBtn.style.background = 'rgba(255,255,255,0.04)';
+      this.saveBtn.style.borderColor = '#44ff88';
+      this.saveBtn.style.color = '#44ff88';
+    }, 2000);
   }
 
   private makeButton(label: string, borderColor: string): HTMLButtonElement {
@@ -340,12 +441,8 @@ export class VisualEditor {
       fontSize: '10px',
       letterSpacing: '0.5px',
     });
-    btn.addEventListener('mouseover', () => {
-      btn.style.background = `${borderColor}22`;
-    });
-    btn.addEventListener('mouseout', () => {
-      btn.style.background = 'rgba(255,255,255,0.04)';
-    });
+    btn.addEventListener('mouseover', () => { btn.style.background = `${borderColor}22`; });
+    btn.addEventListener('mouseout', () => { btn.style.background = 'rgba(255,255,255,0.04)'; });
     return btn;
   }
 
@@ -353,46 +450,27 @@ export class VisualEditor {
 
   private colorRow(label: string, path: string): HTMLElement {
     const row = document.createElement('div');
-    Object.assign(row.style, {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    });
+    Object.assign(row.style, { display: 'flex', alignItems: 'center', justifyContent: 'space-between' });
 
     const lbl = document.createElement('span');
     lbl.textContent = label;
     Object.assign(lbl.style, { color: '#aaaacc', flex: '1' });
 
     const swatchWrapper = document.createElement('div');
-    Object.assign(swatchWrapper.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-    });
+    Object.assign(swatchWrapper.style, { display: 'flex', alignItems: 'center', gap: '4px' });
 
     const hexDisplay = document.createElement('span');
     hexDisplay.textContent = String(this.getByPath(path));
-    Object.assign(hexDisplay.style, {
-      color: '#888',
-      fontSize: '10px',
-      minWidth: '54px',
-      textAlign: 'right',
-    });
+    Object.assign(hexDisplay.style, { color: '#888', fontSize: '10px', minWidth: '54px', textAlign: 'right' });
 
     const input = document.createElement('input');
     input.type = 'color';
     input.dataset.path = path;
     input.value = String(this.getByPath(path));
     Object.assign(input.style, {
-      width: '28px',
-      height: '22px',
-      border: '1px solid #443366',
-      borderRadius: '3px',
-      padding: '1px',
-      cursor: 'pointer',
-      background: 'none',
+      width: '28px', height: '22px', border: '1px solid #443366',
+      borderRadius: '3px', padding: '1px', cursor: 'pointer', background: 'none',
     });
-
     input.addEventListener('input', () => {
       this.setByPath(path, input.value);
       hexDisplay.textContent = input.value;
@@ -408,11 +486,7 @@ export class VisualEditor {
 
   private sliderRow(label: string, path: string, min: number, max: number, step: number): HTMLElement {
     const row = document.createElement('div');
-    Object.assign(row.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '6px',
-    });
+    Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '6px' });
 
     const lbl = document.createElement('span');
     lbl.textContent = label;
@@ -427,20 +501,11 @@ export class VisualEditor {
     slider.max = String(max);
     slider.step = String(step);
     slider.value = String(currentVal);
-    Object.assign(slider.style, {
-      flex: '1',
-      accentColor: '#8844ff',
-      cursor: 'pointer',
-    });
+    Object.assign(slider.style, { flex: '1', accentColor: '#8844ff', cursor: 'pointer' });
 
     const valDisplay = document.createElement('span');
     valDisplay.textContent = String(currentVal);
-    Object.assign(valDisplay.style, {
-      color: '#ffffff',
-      minWidth: '30px',
-      textAlign: 'right',
-      fontSize: '10px',
-    });
+    Object.assign(valDisplay.style, { color: '#ffffff', minWidth: '30px', textAlign: 'right', fontSize: '10px' });
 
     slider.addEventListener('input', () => {
       const val = parseFloat(slider.value);
@@ -474,13 +539,10 @@ export class VisualEditor {
       const path = input.dataset.path!;
       const val = this.getByPath(path);
       input.value = String(val);
-
       if (input.type === 'range') {
-        // Update value display sibling
         const display = input.nextElementSibling as HTMLElement | null;
         if (display) display.textContent = String(val);
       } else if (input.type === 'color') {
-        // Update hex display sibling (previous element)
         const display = input.previousElementSibling as HTMLElement | null;
         if (display) display.textContent = String(val);
       }

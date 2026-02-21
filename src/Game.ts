@@ -833,8 +833,40 @@ export class Game {
         r.glowColor = theme.player.glowColor;
         r.glowRadius = theme.player.glowRadius;
         r.radius = theme.player.baseRadius;
-        // Force PIXI to rebuild the visual on next render pass
         this.renderSystem.rebuildEntityGraphics(r);
+      }
+    }
+
+    // Entity sizes — update all live entities whose spriteKey matches a type override
+    const entityOverrides = theme.entities as Record<string, number>;
+    const allEntities = this.world.query('Renderable');
+    for (const entity of allEntities) {
+      if (entity.hasComponent('PlayerControlled')) continue; // player handled above
+      const r = entity.getComponent<Renderable>('Renderable');
+      if (!r || !r.spriteKey) continue;
+      const newRadius = entityOverrides[r.spriteKey];
+      if (newRadius === undefined || newRadius === r.radius) continue;
+      r.radius = newRadius;
+      const col = entity.getComponent<Collider>('Collider');
+      if (col) col.radius = newRadius;
+      this.renderSystem.rebuildEntityGraphics(r);
+    }
+
+    // Patch tier spawn configs so future spawns use the new radii
+    for (let i = 0; i < this.tierManager.getTierCount(); i++) {
+      const tier = this.tierManager.getTierAt(i)!;
+      for (const spawn of tier.entitySpawns) {
+        const override = entityOverrides[spawn.type];
+        if (override !== undefined) {
+          spawn.minRadius = override;
+          spawn.maxRadius = override;
+        }
+      }
+      for (const hazard of tier.hazardSpawns) {
+        const override = entityOverrides[hazard.type];
+        if (override !== undefined) {
+          hazard.radius = override;
+        }
       }
     }
   }
