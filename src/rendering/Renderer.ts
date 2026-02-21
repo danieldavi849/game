@@ -40,4 +40,10 @@ export class Renderer {
   resize(): void {
     this.app.resize();
   }
+
+  /** Update the PIXI WebGL background clear color */
+  setBackgroundColor(hex: string): void {
+    const num = parseInt(hex.replace('#', ''), 16);
+    (this.app.renderer as any).background.color = num;
+  }
 }

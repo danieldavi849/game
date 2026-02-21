@@ -67,8 +67,19 @@ export class ProgressBar {
     this.y = y;
   }
 
-  /** Update colors */
+  /** Update bar dimensions */
+  setSize(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
+  }
+
+  /** Update foreground color */
   setFgColor(color: string): void {
     this.fgColor = color;
+  }
+
+  /** Update background color */
+  setBgColor(color: string): void {
+    this.bgColor = color;
   }
 }

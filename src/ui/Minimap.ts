@@ -15,6 +15,11 @@ export class Minimap {
     this.size = size;
   }
 
+  /** Update minimap size */
+  setSize(size: number): void {
+    this.size = size;
+  }
+
   /** Render the minimap */
   render(ctx: CanvasRenderingContext2D, world: World, screenWidth: number, screenHeight: number): void {
     this.x = screenWidth - this.size - CONFIG.MINIMAP_PADDING;

@@ -118,6 +118,19 @@ export class RenderSystem implements System {
     }
   }
 
+  /**
+   * Destroy the current PIXI graphics for a Renderable so they get rebuilt
+   * on the next render pass. Call this when visual properties (color, radius) change.
+   */
+  rebuildEntityGraphics(r: Renderable): void {
+    if (r.graphics) {
+      const gfx = r.graphics as unknown as PIXI.Container;
+      if (gfx.parent) gfx.parent.removeChild(gfx);
+      gfx.destroy({ children: true });
+      r.graphics = undefined;
+    }
+  }
+
   private createGraphics(r: Renderable, isPlayer: boolean, entityId: number): void {
     // In PixiJS v8, Graphics should not have children.
     // We use a Container to group the shape and any additional overlays (like shields).

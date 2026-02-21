@@ -25,6 +25,7 @@ import { UpgradeScreen } from './ui/UpgradeScreen.ts';
 import { MenuScreen } from './ui/MenuScreen.ts';
 import { GuideScreen } from './ui/GuideScreen.ts';
 import { DebugOverlay } from './ui/DebugOverlay.ts';
+import { VisualEditor, VisualTheme } from './ui/VisualEditor.ts';
 import { DealScreen, DealChoice } from './ui/DealScreen.ts';
 import { RelicHUD } from './ui/RelicHUD.ts';
 import { ItemShopScreen } from './ui/ItemShopScreen.ts';
@@ -77,6 +78,7 @@ export class Game {
   private menuScreen!: MenuScreen;
   private guideScreen!: GuideScreen;
   private debugOverlay!: DebugOverlay;
+  private visualEditor!: VisualEditor;
   private dealScreen!: DealScreen;
   private relicHUD!: RelicHUD;
   private itemShopScreen!: ItemShopScreen;
@@ -146,11 +148,15 @@ export class Game {
     this.menuScreen = new MenuScreen();
     this.guideScreen = new GuideScreen();
     this.debugOverlay = new DebugOverlay();
+    this.visualEditor = new VisualEditor((theme) => this.applyVisualTheme(theme));
     this.dealScreen = new DealScreen();
     this.relicHUD = new RelicHUD();
     this.itemShopScreen = new ItemShopScreen();
 
     this.registerEvents();
+
+    // Apply any persisted visual theme from the editor
+    this.applyVisualTheme(this.visualEditor.getCurrentTheme());
 
     // Show menu first
     this.gameState = GameState.Menu;
@@ -188,12 +194,19 @@ export class Game {
       );
     });
 
-    // Keyboard shortcuts (Tab for shop, Debug tools)
+    // Keyboard shortcuts (Tab for shop, F2 for visual editor, Debug tools)
     window.addEventListener('keydown', (e) => {
       // Prevent default Tab behavior (focus cycling)
       if (e.key === 'Tab') {
         e.preventDefault();
         this.toggleItemShop();
+        return;
+      }
+
+      // F2 toggles the visual editor (available at all times)
+      if (e.key === 'F2') {
+        e.preventDefault();
+        this.visualEditor.toggle();
         return;
       }
 
@@ -473,6 +486,9 @@ export class Game {
     this.hud.setTier(firstTier.displayName, firstTier.displayColor);
     this.updateHudThreshold();
 
+    // Re-apply visual editor overrides on top of tier defaults
+    this.applyVisualTheme(this.visualEditor.getCurrentTheme());
+
     this.gameState = GameState.Playing;
     this.loop.setTimeScale(1);
   }
@@ -653,10 +669,10 @@ export class Game {
     ctx.fillStyle = 'rgba(150,150,150,0.5)';
     ctx.textAlign = 'left';
     const tips = this.debugMode
-      ? 'WASD: move | Mouse: aim | SPC: ability | N: skip | G: god | M: +mass | B: dash | C: +CP | T: restart'
+      ? 'WASD: move | Mouse: aim | SPC: ability | N: skip | G: god | M: +mass | B: dash | C: +CP | T: restart | F2: visual editor'
       : hasAbility
-        ? 'WASD: move | Mouse: aim | SPC: ability'
-        : 'WASD: move | Mouse: aim';
+        ? 'WASD: move | Mouse: aim | SPC: ability | F2: visual editor'
+        : 'WASD: move | Mouse: aim | F2: visual editor';
     ctx.fillText(tips, CONFIG.HUD_PADDING, this.renderer.height - 12);
   }
 
@@ -780,6 +796,45 @@ export class Game {
       case 't': {
         this.restart();
         break;
+      }
+    }
+  }
+
+  /** Apply a VisualTheme (from VisualEditor) to all live systems */
+  private applyVisualTheme(theme: VisualTheme): void {
+    // Background: grid, particles, colors
+    this.background.setConfig({
+      baseColor: theme.background.baseColor,
+      gridColor: theme.background.gridColor,
+      gridSpacing: theme.background.gridSpacing,
+      particleDensity: theme.background.particleDensity,
+      particleColor: theme.background.particleColor,
+    });
+
+    // PIXI WebGL clear color
+    this.renderer.setBackgroundColor(theme.background.pixiBaseColor);
+
+    // HUD layout and colors
+    this.hud.applyVisualTheme(
+      theme.hud.evoBarColor,
+      theme.hud.energyBarColor,
+      theme.hud.barWidth,
+      theme.hud.barHeight,
+      theme.hud.padding,
+      theme.hud.minimapSize,
+    );
+
+    // Player visuals (only when a player entity exists)
+    const players = this.world.query('PlayerControlled', 'Renderable');
+    for (const player of players) {
+      const r = player.getComponent<Renderable>('Renderable');
+      if (r) {
+        r.color = theme.player.color;
+        r.glowColor = theme.player.glowColor;
+        r.glowRadius = theme.player.glowRadius;
+        r.radius = theme.player.baseRadius;
+        // Force PIXI to rebuild the visual on next render pass
+        this.renderSystem.rebuildEntityGraphics(r);
       }
     }
   }
