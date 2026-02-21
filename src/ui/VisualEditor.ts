@@ -23,26 +23,26 @@ const STORAGE_KEY = 'ascension_visual_theme';
 
 export const VISUAL_DEFAULTS: VisualTheme = {
   background: {
-    pixiBaseColor: '#050510',
+    pixiBaseColor: '#b0dae3',
     baseColor: '#040408',
-    gridColor: '#0a0a1a',
+    gridColor: '#73b095',
     gridSpacing: 60,
     particleDensity: 80,
-    particleColor: '#223355',
+    particleColor: '#fbff00',
   },
   hud: {
     evoBarColor: '#aa44ff',
     energyBarColor: '#44ff44',
-    barWidth: 200,
-    barHeight: 14,
-    padding: 16,
-    minimapSize: 140,
+    barWidth: 400,
+    barHeight: 20,
+    padding: 22,
+    minimapSize: 208,
   },
   player: {
     color: '#cc44ff',
     glowColor: '#cc44ff',
-    glowRadius: 15,
-    baseRadius: 10,
+    glowRadius: 38,
+    baseRadius: 26,
   },
 };
 
