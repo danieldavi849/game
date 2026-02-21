@@ -5,6 +5,7 @@ import { CONFIG } from '../utils/Constants.ts';
 export class TierIndicator {
   private tierName: string = 'Subatomic';
   private tierColor: string = '#ff44ff';
+  private padding: number = CONFIG.HUD_PADDING;
 
   /** Set current tier display info */
   setTier(name: string, color: string): void {
@@ -12,10 +13,15 @@ export class TierIndicator {
     this.tierColor = color;
   }
 
+  /** Update HUD padding (repositions the indicator) */
+  setPadding(padding: number): void {
+    this.padding = padding;
+  }
+
   /** Render the tier indicator */
   render(ctx: CanvasRenderingContext2D, level: number = 1): void {
-    const x = CONFIG.HUD_PADDING;
-    const y = CONFIG.HUD_PADDING;
+    const x = this.padding;
+    const y = this.padding;
 
     // Tier badge
     ctx.font = 'bold 14px monospace';

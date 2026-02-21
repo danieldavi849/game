@@ -14,20 +14,25 @@ export class HUD {
   private tierIndicator: TierIndicator;
   private evolutionThreshold: number = 100;
 
+  // Visual theme state (can be updated by VisualEditor)
+  private padding: number = CONFIG.HUD_PADDING;
+  private barWidth: number = CONFIG.HUD_BAR_WIDTH;
+  private barHeight: number = CONFIG.HUD_BAR_HEIGHT;
+  private baseEnergyColor: string = '#44ff44';
+
   constructor() {
-    const barX = CONFIG.HUD_PADDING;
     this.tierIndicator = new TierIndicator();
     this.evolutionBar = new ProgressBar(
-      barX, 40,
-      CONFIG.HUD_BAR_WIDTH, CONFIG.HUD_BAR_HEIGHT,
+      this.padding, this.evoBarY(),
+      this.barWidth, this.barHeight,
       '#aa44ff', '#222222', 'EVO',
     );
     this.energyBar = new ProgressBar(
-      barX, 60,
-      CONFIG.HUD_BAR_WIDTH, CONFIG.HUD_BAR_HEIGHT,
-      '#44ff44', '#222222', 'NRG',
+      this.padding, this.energyBarY(),
+      this.barWidth, this.barHeight,
+      this.baseEnergyColor, '#222222', 'NRG',
     );
-    this.minimap = new Minimap();
+    this.minimap = new Minimap(CONFIG.MINIMAP_SIZE);
   }
 
   /** Update the displayed evolution threshold */
@@ -38,6 +43,39 @@ export class HUD {
   /** Update tier indicator */
   setTier(name: string, color: string): void {
     this.tierIndicator.setTier(name, color);
+  }
+
+  /**
+   * Apply a visual theme from the VisualEditor.
+   * Updates bar colors, sizes, padding, and minimap size.
+   */
+  applyVisualTheme(
+    evoBarColor: string,
+    energyBarColor: string,
+    barWidth: number,
+    barHeight: number,
+    padding: number,
+    minimapSize: number,
+  ): void {
+    this.barWidth = barWidth;
+    this.barHeight = barHeight;
+    this.padding = padding;
+    this.baseEnergyColor = energyBarColor;
+
+    // Update tier indicator padding
+    this.tierIndicator.setPadding(padding);
+
+    // Reposition & resize both bars
+    this.evolutionBar.setPosition(padding, this.evoBarY());
+    this.evolutionBar.setSize(barWidth, barHeight);
+    this.evolutionBar.setFgColor(evoBarColor);
+
+    this.energyBar.setPosition(padding, this.energyBarY());
+    this.energyBar.setSize(barWidth, barHeight);
+    this.energyBar.setFgColor(energyBarColor);
+
+    // Update minimap size
+    this.minimap.setSize(minimapSize);
   }
 
   /** Render the entire HUD */
@@ -59,7 +97,7 @@ export class HUD {
       const flash = Math.sin(Date.now() * 0.01) > 0;
       this.energyBar.setFgColor(flash ? '#ff4444' : '#ff8800');
     } else {
-      this.energyBar.setFgColor('#44ff44');
+      this.energyBar.setFgColor(this.baseEnergyColor);
     }
     this.energyBar.render(ctx, ctrl.energy, CONFIG.ENERGY_MAX);
 
@@ -67,13 +105,35 @@ export class HUD {
     ctx.font = '12px monospace';
     ctx.fillStyle = '#aaaaaa';
     ctx.textAlign = 'left';
-    ctx.fillText(`MASS: ${Math.floor(physics?.mass ?? 0)}`, CONFIG.HUD_PADDING, 92);
+    ctx.fillText(`MASS: ${Math.floor(physics?.mass ?? 0)}`, this.padding, this.massY());
 
     // CP counter
     ctx.fillStyle = '#ffdd44';
-    ctx.fillText(`CP: ${ctrl.cp}`, CONFIG.HUD_PADDING, 108);
+    ctx.fillText(`CP: ${ctrl.cp}`, this.padding, this.cpY());
 
     // Minimap
     this.minimap.render(ctx, world, screenWidth, screenHeight);
+  }
+
+  // ─── Layout helpers ──────────────────────────────────────────────────────────
+
+  /** Y position of the evo bar (fixed offset below the tier indicator) */
+  private evoBarY(): number {
+    return this.padding + 24;
+  }
+
+  /** Y position of the energy bar */
+  private energyBarY(): number {
+    return this.evoBarY() + this.barHeight + 6;
+  }
+
+  /** Y position of the mass text baseline */
+  private massY(): number {
+    return this.energyBarY() + this.barHeight + 18;
+  }
+
+  /** Y position of the CP text baseline */
+  private cpY(): number {
+    return this.massY() + 16;
   }
 }
