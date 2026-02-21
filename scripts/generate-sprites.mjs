@@ -2,17 +2,36 @@
  * Pixel art sprite generator using PixelLab API.
  *
  * Usage:
- *   PIXELLAB_SECRET=your_key npm run generate-sprites
+ *   npm run generate-sprites
+ *
+ * Set your API key in a .env file at the project root:
+ *   PIXELLAB_SECRET=your_key_here
  *
  * Sprites are saved to public/sprites/ and loaded at runtime by SpriteManager.
  * Re-running skips already-generated files; delete a file to regenerate it.
  */
 
 import { PixelLabClient } from '@pixellab-code/pixellab';
-import { mkdir } from 'fs/promises';
+import { mkdir, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+/** Load variables from .env file into process.env (if the file exists) */
+async function loadDotEnv() {
+  const envPath = path.join(__dirname, '..', '.env');
+  if (!existsSync(envPath)) return;
+  const contents = await readFile(envPath, 'utf8');
+  for (const line of contents.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SPRITES_DIR = path.join(__dirname, '..', 'public', 'sprites');
@@ -99,6 +118,8 @@ const SPRITE_DEFINITIONS = [
 ];
 
 async function main() {
+  await loadDotEnv();
+
   if (!process.env.PIXELLAB_SECRET) {
     console.error('Error: PIXELLAB_SECRET environment variable is not set.');
     console.error('Usage: PIXELLAB_SECRET=your_key npm run generate-sprites');
